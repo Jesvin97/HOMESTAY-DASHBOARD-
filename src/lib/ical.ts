@@ -1,10 +1,11 @@
 import { db, st } from "./db";
+import { today } from "./dates";
 
 const ymd = (s: string) => s.replace(/-/g, "");
 export async function roomIcs(roomId: number): Promise<string> {
   const name = (await db.prepare("SELECT name FROM rooms WHERE id=?").get(roomId) as { name: string } | undefined)?.name ?? "Room";
-  const rows = await db.prepare("SELECT code uid,check_in s,check_out e FROM bookings WHERE room_id=? AND status IN ('confirmed','checked_in','pending') AND check_out>=date('now')").all(roomId) as { uid: string; s: string; e: string }[];
-  const blocks = await db.prepare("SELECT 'blk'||id uid,start_date s,end_date e FROM room_blocks WHERE room_id=? AND source!='ota' AND end_date>=date('now')").all(roomId) as { uid: string; s: string; e: string }[];
+  const rows = await db.prepare("SELECT code uid,check_in s,check_out e FROM bookings WHERE room_id=? AND status IN ('confirmed','checked_in','pending') AND check_out>=?").all(roomId, today()) as { uid: string; s: string; e: string }[];
+  const blocks = await db.prepare("SELECT 'blk'||id uid,start_date s,end_date e FROM room_blocks WHERE room_id=? AND source!='ota' AND end_date>=?").all(roomId, today()) as { uid: string; s: string; e: string }[];
   const ev = [...rows, ...blocks].map((r) => `BEGIN:VEVENT\r\nUID:${r.uid}@homestay\r\nDTSTART;VALUE=DATE:${ymd(r.s)}\r\nDTEND;VALUE=DATE:${ymd(r.e)}\r\nSUMMARY:Reserved\r\nEND:VEVENT`).join("\r\n");
   return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Homestay Dashboard//${name}//EN\r\n${ev}${ev ? "\r\n" : ""}END:VCALENDAR\r\n`;
 }
