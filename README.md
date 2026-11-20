@@ -1,5 +1,10 @@
 # Homestay Desk — owner dashboard
 
+**Docs:** [DATA_NEEDED.md](DATA_NEEDED.md) (what each section needs from you) · [DEPLOY.md](DEPLOY.md) (Cloudflare) · [AUDIT.md](AUDIT.md) (logic audit) · [QUESTIONS.md](QUESTIONS.md) (open questions)
+
+> **Booking rule:** a booking is *confirmed only when the full amount is received*; until then it is *pending* and holds the room for a limited time.
+
+
 Next.js 15 + SQLite (better-sqlite3). One database is shared by the dashboard **and** the website, so a booking made by the owner, the website or an OTA feed shows up everywhere and can't be double-sold.
 
 ## Database: Cloudflare D1
@@ -25,6 +30,7 @@ cp .env.example .env     # fill in SESSION_SECRET and DATA_KEY at least (openssl
 npm install
 npm run seed             # demo data + prints the owner login ONCE (must change password on first login)
 npm run dev              # http://localhost:3000
+npm run e2e              # presses every button (needs a built+running app, see tests/e2e.cjs header)
 npm test                 # pricing, coupons, concurrent double-booking, refunds, Aadhaar checksum, TOTP (RFC 6238 vectors), backup codes
 ```
 

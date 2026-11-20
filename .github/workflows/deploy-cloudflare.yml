@@ -1,0 +1,20 @@
+# MANUAL deploy to Cloudflare (Actions tab → "Deploy to Cloudflare" → Run workflow).
+# Needs repo secrets: CLOUDFLARE_API_TOKEN (Workers Scripts:Edit + D1:Edit), CLOUDFLARE_ACCOUNT_ID.
+# App secrets (SESSION_SECRET, DATA_KEY, …) live in Cloudflare itself — see DEPLOY.md.
+name: Deploy to Cloudflare
+on: { workflow_dispatch: {} }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm test
+      - run: npx opennextjs-cloudflare build
+        env: { SESSION_SECRET: build-only-secret-build-only-secret-xx, DATA_KEY: build-only-data-key }
+      - run: npx opennextjs-cloudflare deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

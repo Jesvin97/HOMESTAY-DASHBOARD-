@@ -7,6 +7,12 @@ let stepOffset = 0;
 const totp = (k, off = 0) => { const m = Buffer.alloc(8); m.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000) + off)); const h = crypto.createHmac("sha1", dec(k)).update(m).digest(); const o = h[19] & 15; return String((((h[o] & 127) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3]) % 1e6).padStart(6, "0"); };
 function verhoeff(b) { const d = [[0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],[2,3,4,0,1,7,8,9,5,6],[3,4,0,1,2,8,9,5,6,7],[4,0,1,2,3,9,5,6,7,8],[5,9,8,7,6,0,4,3,2,1],[6,5,9,8,7,1,0,4,3,2],[7,6,5,9,8,2,1,0,4,3],[8,7,6,5,9,3,2,1,0,4],[9,8,7,6,5,4,3,2,1,0]]; const p = [[0,1,2,3,4,5,6,7,8,9],[1,5,7,6,2,8,3,0,9,4],[5,8,0,3,7,9,6,1,4,2],[8,9,1,6,0,4,3,5,2,7],[9,4,5,3,1,2,6,8,7,0],[4,2,8,6,5,7,3,9,0,1],[2,7,9,3,8,0,6,4,1,5],[7,0,4,6,9,1,3,2,5,8]]; const inv = [0,4,3,2,1,5,6,7,8,9]; let c = 0; [...b].reverse().forEach((ch, i) => { c = d[c][p[(i + 1) % 8][Number(ch)]]; }); return b + inv[c]; }
 const iso = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+function dbq(sql) { // read one value `t` from whichever DB the app uses (local SQLite file, or D1 over REST)
+  const code = process.env.CLOUDFLARE_D1_DATABASE_ID
+    ? `fetch(process.env.CLOUDFLARE_API_BASE+"/accounts/"+process.env.CLOUDFLARE_ACCOUNT_ID+"/d1/database/"+process.env.CLOUDFLARE_D1_DATABASE_ID+"/query",{method:"POST",headers:{Authorization:"Bearer "+process.env.CLOUDFLARE_API_TOKEN,"content-type":"application/json"},body:JSON.stringify({sql:${JSON.stringify(sql)}})}).then(r=>r.json()).then(j=>console.log(j.result[0].results[0].t))`
+    : `const D=require("better-sqlite3");console.log(new D(process.env.DATABASE_FILE||"data/homestay.db").prepare(${JSON.stringify(sql)}).get().t)`;
+  return require("child_process").execFileSync("node", ["-e", code]).toString().trim();
+}
 let pass = 0, fail = 0; const failures = [];
 function check(name, ok, detail = "") { if (ok) { pass++; console.log("  PASS", name); } else { fail++; failures.push(name + " :: " + detail); console.log("  FAIL", name, "::", detail); } }
 
@@ -172,7 +178,7 @@ function check(name, ok, detail = "") { if (ok) { pass++; console.log("  PASS", 
   await o.goto(U + "/testimonials"); const tc = o.locator("section", { hasText: "queued" }).first();
   if (await tc.locator('button:has-text("I sent it")').count()) { await tc.locator('button:has-text("I sent it")').click(); await o.waitForLoadState("networkidle"); check("marked as requested", true); } else check("marked as requested (none queued with WhatsApp consent)", true);
   await o.goto(U + "/testimonials"); const tf = o.locator("section", { has: o.locator("input[name=text]") }).first(); await tf.locator("input[name=text]").fill("E2E lovely stay"); f = await submit(o, tf, "Save"); check("testimonial saved", /Testimonial saved/.test(f), f);
-  const tok = require("child_process").execSync(`node -e "const D=require('better-sqlite3');const d=new D(process.env.DATABASE_FILE||'data/homestay.db');console.log(d.prepare(\\"SELECT token FROM testimonials WHERE status='queued' LIMIT 1\\").get().token)"`).toString().trim();
+  const tok = dbq("SELECT token t FROM testimonials WHERE status='queued' LIMIT 1");
   const rp = await (await browser.newContext()).newPage(); await rp.goto(U + "/review/" + tok); await rp.fill("textarea[name=text]", "public review"); await rp.click('button:has-text("Send")'); await rp.waitForTimeout(1500); await rp.goto(U + "/review/" + tok); check("public review link works and can't be reused", (await rp.textContent("body")).includes("Thank you"));
 
   console.log("== channels / settings");
@@ -210,7 +216,7 @@ function check(name, ok, detail = "") { if (ok) { pass++; console.log("  PASS", 
   let r5 = await fetch(`${U}/api/public/bookings`, { method: "POST", headers: H, body: body({ roomId: av.rooms[1].id, checkIn: iso(410), checkOut: iso(411), name: "Claimer", phone: "+919777000004", paidOnline: 99999999 }) }); let j5 = await r5.json(); check("claimed payment WITHOUT reference is not believed", j5.status === "pending", JSON.stringify(j5));
   const ics = await fetch(`${U}/api/ical/1?token=${process.env.ICAL_TOKEN || "icaltoken"}`); check("iCal export works with token", ics.status === 200 && (await ics.text()).includes("BEGIN:VCALENDAR"));
   check("iCal export rejects missing token", (await fetch(`${U}/api/ical/1`)).status === 403);
-  const tokU = require("child_process").execSync(`node -e "const D=require('better-sqlite3');const d=new D(process.env.DATABASE_FILE||'data/homestay.db');console.log(d.prepare(\\"SELECT unsub_token t FROM guests WHERE consent_marketing=1 AND unsub_token IS NOT NULL LIMIT 1\\").get().t)"`).toString().trim();
+  const tokU = dbq("SELECT unsub_token t FROM guests WHERE consent_marketing=1 AND unsub_token IS NOT NULL LIMIT 1");
   check("one-click unsubscribe POST works", (await fetch(`${U}/api/unsubscribe/${tokU}`, { method: "POST" })).status === 200);
   const up = await (await browser.newContext()).newPage(); await up.goto(U + "/unsubscribe/" + tokU); check("unsubscribe page confirms", (await up.textContent("body")).includes("unsubscribed"));
   check("inbound email webhook rejects bad secret", (await fetch(`${U}/api/inbound/email`, { method: "POST", headers: { "content-type": "application/json", "x-inbound-secret": "nope" }, body: "{}" })).status === 401);

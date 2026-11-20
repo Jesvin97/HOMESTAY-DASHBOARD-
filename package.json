@@ -10,9 +10,14 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.mts",
     "db:migrate": "tsx scripts/migrate.ts",
-    "mfa:reset": "tsx scripts/reset-mfa.ts"
+    "mfa:reset": "tsx scripts/reset-mfa.ts",
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "e2e": "node tests/e2e.cjs"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "^1.20.18",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.2.0",
     "imapflow": "^2.12.2",
@@ -37,6 +42,7 @@
     "postcss": "^8.5.33",
     "tailwindcss": "^3.4.19",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "wrangler": "^4.165.0"
   }
 }

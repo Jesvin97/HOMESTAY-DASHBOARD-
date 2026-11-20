@@ -29,6 +29,9 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           {rows.map((r, i) => <div key={i} className="mb-2 flex items-center gap-2 text-sm">≥<input name={`p${i}d`} type="number" min={0} defaultValue={r.daysBefore} className={inputCls + " w-20"} />days before → <input name={`p${i}r`} type="number" min={0} max={100} defaultValue={r.refundPct} className={inputCls + " w-20"} />% refund</div>)}
           <p className="text-xs text-slate-500">Always include a row with 0 days, otherwise late cancellations default to 0%.</p>
         </Card>
+        <Card title="Booking holds">
+          <Field label="Hold an unpaid booking for (hours)" hint="A booking is confirmed only when the FULL amount is received. Bookings with no payment at all are released after this long; part-paid ones are kept for you to decide."><input name="payment_hold_hours" type="number" min={1} max={168} defaultValue={s.payment_hold_hours} className={inputCls} /></Field>
+        </Card>
         <Card title="Privacy officer & retention">
           <div className="space-y-3"><Field label="Grievance officer name"><input name="grievance_officer_name" defaultValue={s.grievance_officer_name} className={inputCls} /></Field>
             <Field label="Grievance officer email"><input name="grievance_officer_email" defaultValue={s.grievance_officer_email} className={inputCls} /></Field>

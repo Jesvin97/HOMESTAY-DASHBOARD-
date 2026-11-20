@@ -413,11 +413,19 @@ export async function syncChannelAction(fd: FormData) {
 }
 export async function saveSettingsAction(fd: FormData) {
   const u = await requireUser("owner");
-  for (const k of ["property_name", "property_phone", "property_email", "gst_number", "gst_mode", "gst_flat_pct", "services_gst_pct", "grievance_officer_name", "grievance_officer_email", "aadhaar_retention_days", "data_retention_years"])
-    if (fd.has(k)) await setSetting(k, s(fd, k));
-  const tiers = [0, 1, 2, 3].map((i) => ({ daysBefore: n(fd, `p${i}d`, -1), refundPct: n(fd, `p${i}r`) })).filter((t) => t.daysBefore >= 0 && t.refundPct >= 0 && t.refundPct <= 100);
-  if (tiers.length) await setSetting("cancellation_policy", JSON.stringify(tiers));
-  await audit(u, "settings_saved", "settings");
+  const num = (k: string, min: number, max: number) => { const v = Number(s(fd, k)); return Number.isFinite(v) && v >= min && v <= max ? String(v) : null; };
+  const bad: string[] = [];
+  const text = ["property_name", "property_phone", "property_email", "gst_number", "grievance_officer_name", "grievance_officer_email"];
+  for (const k of text) if (fd.has(k)) await setSetting(k, s(fd, k).slice(0, 200));
+  if (fd.has("gst_mode")) { const m = s(fd, "gst_mode"); if (["slab", "flat", "none"].includes(m)) await setSetting("gst_mode", m); else bad.push("GST method"); }
+  for (const [k, lo, hi, label] of [["gst_flat_pct", 0, 28, "Flat GST %"], ["services_gst_pct", 0, 28, "GST % on services"], ["aadhaar_retention_days", 0, 365, "Aadhaar retention days"], ["data_retention_years", 1, 20, "Financial retention years"], ["payment_hold_hours", 1, 168, "Payment hold hours"]] as const) {
+    if (!fd.has(k)) continue; const v = num(k, lo, hi); if (v === null) bad.push(`${label} (${lo}–${hi})`); else await setSetting(k, v);
+  }
+  const tiers = [0, 1, 2, 3].map((i) => ({ daysBefore: n(fd, `p${i}d`, -1), refundPct: n(fd, `p${i}r`, -1) })).filter((t) => t.daysBefore >= 0 || t.refundPct >= 0);
+  if (tiers.some((t) => t.daysBefore < 0 || t.refundPct < 0 || t.refundPct > 100)) bad.push("Cancellation policy (days ≥ 0, refund 0–100%)");
+  else if (tiers.length) await setSetting("cancellation_policy", JSON.stringify(tiers));
+  await audit(u, "settings_saved", "settings", undefined, { rejected: bad });
+  if (bad.length) done("/settings", undefined, "Not saved — invalid: " + bad.join("; "));
   done("/settings", "Settings saved.");
 }
 export async function addUserAction(fd: FormData) {

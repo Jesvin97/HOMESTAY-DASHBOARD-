@@ -1,0 +1,12 @@
+# Hourly: releases unpaid booking holds and purges expired Aadhaar. Needs repo secrets APP_URL (https://your-domain) and CRON_SECRET. Skips quietly if unset.
+name: Hourly maintenance
+on:
+  schedule: [{ cron: "7 * * * *" }]
+  workflow_dispatch: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ -z "${{ secrets.APP_URL }}" ] || [ -z "${{ secrets.CRON_SECRET }}" ]; then echo "APP_URL/CRON_SECRET not set — skipping"; exit 0; fi
+          curl -fsS -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" "${{ secrets.APP_URL }}/api/cron/maintenance"

@@ -1,0 +1,20 @@
+{
+  // Cloudflare deployment (OpenNext adapter: runs the full Next.js app on Cloudflare's Workers runtime with static assets).
+  // Secrets are NOT stored here — set them with `npx wrangler secret put NAME` or in the dashboard (see DEPLOY.md).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "homestay-dashboard",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "observability": { "enabled": true },
+  "vars": {
+    "NODE_ENV": "production",
+    "APP_TIMEZONE": "Asia/Kolkata",
+    "MFA_REQUIRED": "true",
+    "IDLE_TIMEOUT_MIN": "15",
+    "ABSOLUTE_TIMEOUT_HOURS": "8"
+  },
+  // Hourly: release unpaid holds + purge expired Aadhaar (the worker's scheduled handler is not wired; use the HTTP route below from an external cron or Cloudflare Workflows if preferred)
+  "triggers": { "crons": [] }
+}
