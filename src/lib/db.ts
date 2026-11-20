@@ -226,6 +226,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   loyalty_welcome_bonus: "50",
   loyalty_review_bonus: "100",
   aadhaar_retention_days: "30",
+  payment_hold_hours: "24", // unpaid pending bookings are released after this many hours
   data_retention_years: "8",
   grievance_officer_name: "",
   grievance_officer_email: "",

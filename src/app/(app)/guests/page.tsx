@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { loadTiers, tierName } from "@/lib/bookings";
-import { Card, PageHeader, Table, Td, btnGhost, inputCls } from "@/components/ui";
+import { Card, Flash, PageHeader, Table, Td, btnGhost, inputCls } from "@/components/ui";
 import { inr } from "@/lib/dates";
 
-export default async function Guests({ searchParams }: { searchParams: Promise<{ q?: string; msg?: string }> }) {
+export default async function Guests({ searchParams }: { searchParams: Promise<{ q?: string; msg?: string; err?: string }> }) {
   const sp = await searchParams;
   const l = `%${sp.q || ""}%`;
   const tiers = await loadTiers();
@@ -17,6 +17,7 @@ export default async function Guests({ searchParams }: { searchParams: Promise<{
   return (
     <>
       <PageHeader title="Guests" sub="Name, phone and email for every guest. Aadhaar is optional and shown masked." />
+      <Flash msg={sp.msg} err={sp.err} />
       <form className="mb-3 flex gap-2"><input name="q" defaultValue={sp.q} placeholder="Search name / phone / email" className={inputCls + " max-w-sm"} /><button className={btnGhost}>Search</button></form>
       <Card>
         <Table head={["Name", "Phone", "Email", "Aadhaar", "Stays", "Spent", "Tier", "Points", "Marketing"]} empty={rows.length ? undefined : "No guests."}>

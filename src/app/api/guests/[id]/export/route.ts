@@ -7,7 +7,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   if (!u) return new NextResponse("Unauthorized", { status: 401 });
   const { id } = await params;
   await audit(u, "guest_data_exported", "guest", id);
-  return new NextResponse(JSON.stringify(exportGuestData(Number(id)), null, 2), {
+  return new NextResponse(JSON.stringify(await exportGuestData(Number(id)), null, 2), {
     headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="guest-${Number(id)}-data.json"` },
   });
 }

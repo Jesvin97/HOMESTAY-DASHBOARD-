@@ -50,8 +50,10 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
           )}
         </Card>
         <Card title="Confirmation email">
+          {b.status === "pending" ? <p className="text-sm text-amber-700">Available once the booking is confirmed (fully paid).</p> : <>
           <div className="mb-2 flex items-center gap-2 text-sm"><Badge v={b.confirmation_status} />{b.confirmation_sent_at && <span className="text-slate-500">{fmtDate(b.confirmation_sent_at)}</span>}</div>
           {b.email ? <form action={sendConfirmationAction}>{hid}<button className={btn}>{b.confirmation_status === "sent" ? "Resend" : "Send"} confirmation</button></form> : <p className="text-sm text-amber-700">Guest has no email — add one on the guest page.</p>}
+          </>}
           <ul className="mt-3 space-y-1 text-xs text-slate-500">{mails.map((m, i) => <li key={i}>{m.kind.replace("_", " ")} → {m.to_addr} · {m.status}{m.error ? ` (${m.error})` : ""}</li>)}</ul>
         </Card>
       </div>
@@ -59,7 +61,7 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
       {active && (
         <Card title="Status" className="mt-4">
           <div className="flex flex-wrap gap-2">
-            {b.status === "pending" && <form action={bookingStatusAction}>{hid}<input type="hidden" name="to" value="confirmed" /><button className={btn}>Confirm booking</button></form>}
+            {b.status === "pending" && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Not confirmed: <b>{inr(b.total - b.paid)}</b> still due. It confirms automatically when the full amount is recorded. Unpaid holds are released after the hold period.</p>}
             {b.status === "confirmed" && <form action={bookingStatusAction}>{hid}<input type="hidden" name="to" value="checked_in" /><button className={btn}>Check in</button></form>}
             {["confirmed", "checked_in"].includes(b.status) && <form action={bookingStatusAction}>{hid}<input type="hidden" name="to" value="completed" /><button className={btn}>Check out (awards loyalty points)</button></form>}
             {b.status === "confirmed" && <form action={bookingStatusAction}>{hid}<input type="hidden" name="to" value="no_show" /><button className={btnGhost}>Mark no-show</button></form>}

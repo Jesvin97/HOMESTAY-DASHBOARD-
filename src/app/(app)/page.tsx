@@ -9,6 +9,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const [o, k, series, src] = await Promise.all([overview(), kpis(), monthlySeries(12), bySource()]);
   const delta = o.prevRevenue ? Math.round(((o.monthRevenue - o.prevRevenue) / o.prevRevenue) * 100) : null;
   const actions = [
+    o.awaitingPayment && { href: "/bookings?view=upcoming", t: `${o.awaitingPayment} booking(s) awaiting full payment (not confirmed yet)` },
     o.pendingRefunds && { href: "/refunds", t: `${o.pendingRefunds} refund(s) awaiting your approval` },
     o.unsentConfirmations && { href: "/bookings?filter=unsent", t: `${o.unsentConfirmations} booking(s) where the confirmation email hasn't gone out` },
     o.openComplaints && { href: "/inbox", t: `${o.openComplaints} open complaint(s)` },
@@ -21,7 +22,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {sp.denied && <Flash err="You don't have permission for that page." />}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Revenue this month" value={inr(o.monthRevenue)} sub={delta == null ? "ex-GST, by check-in month" : `${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)}% vs last month`} tone="good" />
-        <Stat label="Collected (all time)" value={inr(o.collectedAllTime)} sub={`Refunded ${inr(o.refundedAllTime)}`} />
+        <Stat label="Money kept (net of refunds)" value={inr(o.collectedAllTime)} sub={`After ${inr(o.refundedAllTime)} refunded`} />
         <Stat label="Balance still to collect" value={inr(o.outstanding)} sub="upcoming + in-house" tone={o.outstanding ? "warn" : "default"} />
         <Stat label="Occupancy next 30 days" value={o.occupancyNext30 + "%"} sub={`${o.upcomingCount} upcoming bookings`} />
         <Stat label="ADR (12 mo)" value={inr(k.adr)} sub="avg daily rate ex-GST" />

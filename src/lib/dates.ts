@@ -1,5 +1,7 @@
 export const iso = (d: Date) => d.toISOString().slice(0, 10);
-export const today = () => iso(new Date());
+/** "Today" in the property's timezone (default India). UTC would be wrong from 00:00–05:30 IST. */
+export const TZ = process.env.APP_TIMEZONE || "Asia/Kolkata";
+export const today = () => new Date().toLocaleDateString("en-CA", { timeZone: TZ });
 export function addDays(date: string, n: number) {
   const d = new Date(date + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);

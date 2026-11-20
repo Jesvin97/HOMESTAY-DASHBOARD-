@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { db, getSetting } from "@/lib/db";
 import { requireUser, can } from "@/lib/auth";
 import { loadTiers, tierName, completedStays } from "@/lib/bookings";
-import { updateGuestAction, saveAadhaarAction, revealAadhaarAction, deleteAadhaarAction, eraseGuestAction, createDsrAction } from "@/app/actions";
+import RevealAadhaar from "@/components/RevealAadhaar";
+import { updateGuestAction, saveAadhaarAction, deleteAadhaarAction, eraseGuestAction, createDsrAction } from "@/app/actions";
 import { Card, Field, Flash, PageHeader, Table, Td, Badge, btn, btnGhost, btnDanger, inputCls } from "@/components/ui";
 import { inr, fmtDate } from "@/lib/dates";
 
@@ -41,7 +42,7 @@ export default async function GuestPage({ params, searchParams }: { params: Prom
               <>
                 <p className="text-sm">On file: •••• •••• {g.aadhaar_last4}. Auto-deletes on <b>{fmtDate(g.aadhaar_delete_after)}</b>.</p>
                 <div className="mt-2 flex gap-2">
-                  {can(u, "owner") && <form action={revealAadhaarAction}>{hid}<button className={btnGhost}>Reveal once (logged)</button></form>}
+                  {can(u, "owner") && <RevealAadhaar guestId={g.id} />}
                   <form action={deleteAadhaarAction}>{hid}<button className={btnGhost}>Delete now</button></form>
                 </div>
               </>

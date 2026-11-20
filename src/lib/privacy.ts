@@ -29,6 +29,7 @@ export async function eraseGuest(guestId: number): Promise<{ ok: boolean; error?
        consent_marketing=0, consent_whatsapp=0, notes=NULL, unsub_token=NULL, erased_at=datetime('now') WHERE id=?`, guestId),
     st("UPDATE emails SET to_addr=NULL, from_addr=NULL, body='[erased]' WHERE guest_id=?", guestId),
     st("UPDATE complaints SET body='[erased]' WHERE guest_id=?", guestId),
+    st("UPDATE bookings SET notes=NULL WHERE guest_id=?", guestId),
     st("UPDATE testimonials SET text=NULL WHERE guest_id=?", guestId),
   ]); // consent history is deliberately retained as proof of lawful processing
   return { ok: true };

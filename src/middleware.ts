@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 // Cheap gate: no session cookie -> login. Real validation (idle/absolute timeout, revocation) happens server-side in requireUser().
-const PUBLIC = [/^\/login/, /^\/unsubscribe\//, /^\/api\/public\//, /^\/api\/ical\//, /^\/api\/logout/, /^\/review\//, /^\/_next\//, /^\/favicon/];
+const PUBLIC = [/^\/login/, /^\/unsubscribe\//, /^\/api\/public\//, /^\/api\/unsubscribe\//, /^\/api\/inbound\//, /^\/api\/cron\//, /^\/api\/ical\//, /^\/api\/logout/, /^\/review\//, /^\/_next\//, /^\/favicon/];
 export function middleware(req: NextRequest) {
   const p = req.nextUrl.pathname;
   if (PUBLIC.some((r) => r.test(p))) return NextResponse.next();

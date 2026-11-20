@@ -14,7 +14,13 @@ export async function sendMail(o: { to: string; subject: string; html: string; k
   const from = process.env.MAIL_FROM || `${await getSetting("property_name")} <no-reply@example.com>`;
   const t = transport();
   let res: Sent;
-  if (!t) res = { status: "dry_run" };
+  if (process.env.RESEND_API_KEY) {
+    // HTTPS mail API — works on Cloudflare Workers where raw SMTP sockets don't.
+    try {
+      const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ from, to: [o.to], subject: o.subject, html: o.html, headers: o.headers }) });
+      res = r.ok ? { status: "sent" } : { status: "failed", error: `Resend HTTP ${r.status}` };
+    } catch (e) { res = { status: "failed", error: (e as Error).message }; }
+  } else if (!t) res = { status: "dry_run" };
   else {
     try { await t.sendMail({ from, to: o.to, subject: o.subject, html: o.html, headers: o.headers }); res = { status: "sent" }; }
     catch (e) { res = { status: "failed", error: (e as Error).message }; }
@@ -25,14 +31,16 @@ export async function sendMail(o: { to: string; subject: string; html: string; k
   return res;
 }
 
-type B = { id: number; code: string; check_in: string; check_out: string; total: number; paid: number; room_name: string; guest_name: string; email: string | null; adults: number; children: number };
+type B = { id: number; status: string; code: string; check_in: string; check_out: string; total: number; paid: number; room_name: string; guest_name: string; email: string | null; adults: number; children: number };
 const loadB = async (id: number) => await db.prepare(
   `SELECT b.*, r.name room_name, g.name guest_name, g.email FROM bookings b JOIN rooms r ON r.id=b.room_id JOIN guests g ON g.id=b.guest_id WHERE b.id=?`,
 ).get(id) as B | undefined;
 
 export async function sendBookingConfirmation(bookingId: number) {
   const b = await loadB(bookingId);
-  if (!b?.email) return { status: "failed" as const, error: "Guest has no email" };
+  if (!b) return { status: "failed" as const, error: "Booking not found" };
+  if (!["confirmed", "checked_in", "completed"].includes(b.status)) return { status: "failed" as const, error: "Booking isn't confirmed yet — a confirmation is only sent once the full amount is received." };
+  if (!b.email) return { status: "failed" as const, error: "Guest has no email" };
   const name = esc(await getSetting("property_name"));
   const html = `<div style="font-family:Arial,sans-serif;max-width:560px"><h2>Booking confirmed — ${name}</h2>
   <p>Dear ${esc(b.guest_name)}, thank you for booking with us.</p>

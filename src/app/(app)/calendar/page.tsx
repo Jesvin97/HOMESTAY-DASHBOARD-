@@ -11,6 +11,8 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const rooms = await db.prepare("SELECT id,name FROM rooms WHERE active=1").all() as { id: number; name: string }[];
   const bks = await db.prepare("SELECT room_id,check_in,check_out,code,status FROM bookings WHERE status IN ('pending','confirmed','checked_in') AND check_in<? AND check_out>?").all(end, from) as { room_id: number; check_in: string; check_out: string; code: string; status: string }[];
   const blocks = await db.prepare("SELECT id,room_id,start_date,end_date,reason,source FROM room_blocks WHERE start_date<? AND end_date>?").all(end, from) as { id: number; room_id: number; start_date: string; end_date: string; reason: string; source: string }[];
+  // The list of manual blocks must show ALL upcoming ones, not just those inside the 28-day grid window.
+  const manualBlocks = await db.prepare("SELECT id,room_id,start_date,end_date,reason FROM room_blocks WHERE source='manual' AND end_date>=? ORDER BY start_date").all<{ id: number; room_id: number; start_date: string; end_date: string; reason: string }>(today());
   const cell = (rid: number, d: string) => {
     const b = bks.find((x) => x.room_id === rid && x.check_in <= d && x.check_out > d);
     if (b) return { c: b.status === "pending" ? "bg-amber-300" : "bg-brand-500", t: b.code };
@@ -39,7 +41,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
           </form>
         </Card>
         <Card title="Active blocks">
-          <ul className="space-y-1 text-sm">{blocks.filter((b) => b.source === "manual").map((b) => <li key={b.id} className="flex items-center justify-between">{rooms.find((r) => r.id === b.room_id)?.name}: {fmtDate(b.start_date)} → {fmtDate(b.end_date)} ({b.reason})
+          <ul className="space-y-1 text-sm">{manualBlocks.map((b) => <li key={b.id} className="flex items-center justify-between">{rooms.find((r) => r.id === b.room_id)?.name}: {fmtDate(b.start_date)} → {fmtDate(b.end_date)} ({b.reason})
             <form action={unblockAction}><input type="hidden" name="id" value={b.id} /><button className="text-xs text-rose-600 hover:underline">remove</button></form></li>)}</ul>
         </Card>
       </div>

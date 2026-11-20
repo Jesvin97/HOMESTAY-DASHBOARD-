@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db, setSetting, getSetting } from "@/lib/db";
 import { audit, requireUser, hashPassword, passwordProblem, can, resetMfa } from "@/lib/auth";
-import { createBooking, cancelBooking, completeBooking, addPoints, setConsent, storeAadhaar } from "@/lib/bookings";
+import { createBooking, cancelBooking, completeBooking, addPoints, setConsent, storeAadhaar, recordPayment, scheduleAadhaarDeletion } from "@/lib/bookings";
 import { segmentGuests } from "@/lib/marketing";
 import { sendBookingConfirmation, sendCancellationEmail, sendMail, syncInbox, unsubLink } from "@/lib/mail";
 import { payoutUpi, UPI_RE } from "@/lib/upi";
@@ -35,7 +35,7 @@ export async function createBookingAction(fd: FormData) {
   });
   if (!r.ok) done("/bookings/new", undefined, r.error);
   await audit(u, "booking_created", "booking", r.id, { code: r.code });
-  done(`/bookings/${r.id}`, "Booking created. Review it, then send the confirmation email.");
+  done(`/bookings/${r.id}`, r.status === "confirmed" ? "Booking CONFIRMED — full amount received. Send the confirmation email below." : "Booking saved as PENDING — it is confirmed only once the full amount is received. The room is held for a limited time.");
 }
 
 export async function sendConfirmationAction(fd: FormData) {
@@ -48,21 +48,30 @@ export async function sendConfirmationAction(fd: FormData) {
 
 export async function recordPaymentAction(fd: FormData) {
   const u = await requireUser();
-  const id = n(fd, "id"), amt = n(fd, "amount");
-  const row = await db.prepare("SELECT total,paid FROM bookings WHERE id=?").get(id) as { total: number; paid: number };
-  if (amt <= 0 || row.paid + amt > row.total) done(`/bookings/${id}`, undefined, "Amount must be positive and not exceed the balance.");
-  await db.prepare("UPDATE bookings SET paid=paid+?, payment_method=? WHERE id=?").run(amt, s(fd, "method") || "upi", id);
-  await audit(u, "payment_recorded", "booking", id, { amt });
-  done(`/bookings/${id}`, "Payment recorded.");
+  const id = n(fd, "id");
+  const r = await recordPayment(id, n(fd, "amount"), s(fd, "method") || "upi");
+  if (!r.ok) done(`/bookings/${id}`, undefined, r.error);
+  await audit(u, "payment_recorded", "booking", id, { amount: n(fd, "amount"), confirmed: r.confirmed });
+  done(`/bookings/${id}`, r.confirmed ? "Full amount received — booking is now CONFIRMED. You can send the confirmation email." : r.balance > 0 ? `Payment recorded. ₹${r.balance} still due before this booking can be confirmed.` : "Payment recorded.");
 }
 
 export async function bookingStatusAction(fd: FormData) {
   const u = await requireUser();
   const id = n(fd, "id"), to = s(fd, "to");
-  if (to === "checked_in") await db.prepare("UPDATE bookings SET status='checked_in' WHERE id=? AND status='confirmed'").run(id);
-  else if (to === "confirmed") await db.prepare("UPDATE bookings SET status='confirmed' WHERE id=? AND status='pending'").run(id);
-  else if (to === "completed") completeBooking(id, u.id);
-  else if (to === "no_show") await db.prepare("UPDATE bookings SET status='no_show' WHERE id=? AND status='confirmed'").run(id);
+  const cur = await db.prepare("SELECT status,total,paid,guest_id FROM bookings WHERE id=?").get<{ status: string; total: number; paid: number; guest_id: number }>(id);
+  if (!cur) done("/bookings", undefined, "Booking not found.");
+  // Booking can only be moved forward from CONFIRMED (= fully paid). There is deliberately no manual "confirm" button.
+  if (to === "checked_in") {
+    if (cur!.status !== "confirmed") done(`/bookings/${id}`, undefined, cur!.status === "pending" ? `Can't check in: ₹${cur!.total - cur!.paid} still unpaid, so the booking isn't confirmed.` : "Only a confirmed booking can be checked in.");
+    await db.prepare("UPDATE bookings SET status='checked_in' WHERE id=? AND status='confirmed'").run(id);
+  } else if (to === "completed") {
+    if (!["confirmed", "checked_in"].includes(cur!.status)) done(`/bookings/${id}`, undefined, "Only a confirmed or checked-in booking can be checked out.");
+    await completeBooking(id, u.id);
+  } else if (to === "no_show") {
+    if (cur!.status !== "confirmed") done(`/bookings/${id}`, undefined, "Only a confirmed booking can be marked no-show.");
+    await db.prepare("UPDATE bookings SET status='no_show' WHERE id=? AND status='confirmed'").run(id);
+    await scheduleAadhaarDeletion(cur!.guest_id);
+  } else done(`/bookings/${id}`, undefined, "Unknown action.");
   await audit(u, "booking_status", "booking", id, { to });
   done(`/bookings/${id}`, "Updated.");
 }
@@ -241,14 +250,14 @@ export async function saveAadhaarAction(fd: FormData) {
   await audit(u, "aadhaar_stored", "guest", id);
   done(`/guests/${id}`, `Stored encrypted. It will be auto-deleted ${await getSetting("aadhaar_retention_days")} days after check-out.`);
 }
-export async function revealAadhaarAction(fd: FormData) {
+export async function revealAadhaarAction(_prev: { value?: string; error?: string }, fd: FormData): Promise<{ value?: string; error?: string }> {
   const u = await requireUser("owner");
   const id = n(fd, "id");
-  const g = await db.prepare("SELECT aadhaar_enc FROM guests WHERE id=?").get(id) as { aadhaar_enc: string | null };
-  if (!g.aadhaar_enc) done(`/guests/${id}`, undefined, "No Aadhaar on file.");
+  const g = await db.prepare("SELECT aadhaar_enc FROM guests WHERE id=?").get<{ aadhaar_enc: string | null }>(id);
+  if (!g?.aadhaar_enc) return { error: "No Aadhaar on file." };
   await audit(u, "aadhaar_revealed", "guest", id);
-  const d = decrypt(g.aadhaar_enc!);
-  done(`/guests/${id}`, "Aadhaar (shown once, access logged): " + d.replace(/(\d{4})(\d{4})(\d{4})/, "$1 $2 $3"));
+  // Returned to the browser only in this response — never put in a URL (history, logs, referrers).
+  return { value: decrypt(g.aadhaar_enc).replace(/(\d{4})(\d{4})(\d{4})/, "$1 $2 $3") };
 }
 export async function deleteAadhaarAction(fd: FormData) {
   const u = await requireUser();
@@ -351,13 +360,16 @@ export async function sendCampaignAction(fd: FormData) {
   const id = n(fd, "id");
   const c = await db.prepare("SELECT * FROM campaigns WHERE id=? AND status='approved'").get(id) as { subject: string; body: string; segment: string } | undefined;
   if (!c) done("/marketing", undefined, "Campaign must be approved before sending.");
+  // Claim it first so a double-click / second tab can't send the whole campaign twice.
+  const claim = await db.prepare("UPDATE campaigns SET status='sending' WHERE id=? AND status='approved'").run(id);
+  if (claim.changes !== 1) done("/marketing", undefined, "This campaign is already being sent.");
   const prop = await getSetting("property_name");
   let sent = 0;
   for (const g of await segmentGuests(c!.segment)) {
     const body = c!.body.replace(/\{\{name\}\}/g, g.name.split(" ")[0]).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
     const link = unsubLink(g.unsub_token);
     const html = `<div style="font-family:Arial,sans-serif;max-width:560px">${body}<hr><p style="font-size:12px;color:#666">You receive this because you opted in to updates from ${prop}. <a href="${link}">Unsubscribe</a> any time.</p></div>`;
-    const r = await sendMail({ to: g.email, subject: c!.subject, html, kind: "marketing", guestId: g.id, headers: { "List-Unsubscribe": `<${link}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } });
+    const r = await sendMail({ to: g.email, subject: c!.subject, html, kind: "marketing", guestId: g.id, headers: { "List-Unsubscribe": `<${link.replace("/unsubscribe/", "/api/unsubscribe/")}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } });
     if (r.status !== "failed") sent++;
   }
   await db.prepare("UPDATE campaigns SET status='sent', sent_count=?, sent_at=datetime('now') WHERE id=?").run(sent, id);

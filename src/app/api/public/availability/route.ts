@@ -3,14 +3,19 @@ import { db } from "@/lib/db";
 import { isRoomFree, quote } from "@/lib/pricing";
 import { isValidDate, nightsBetween } from "@/lib/dates";
 import { checkApiKey } from "@/lib/publicApi";
+import { limited, ipOf } from "@/lib/rateLimit";
+import { today } from "@/lib/dates";
+import { expireUnpaidHolds } from "@/lib/bookings";
 
 /** GET /api/public/availability?checkIn=YYYY-MM-DD&checkOut=YYYY-MM-DD&guests=2&coupon=CODE  (header x-api-key) */
 export async function GET(req: Request) {
   if (!checkApiKey(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (limited("avail:" + ipOf(req), 60, 60_000)) return NextResponse.json({ error: "too many requests" }, { status: 429 });
   const u = new URL(req.url);
   const ci = u.searchParams.get("checkIn") || "", co = u.searchParams.get("checkOut") || "";
   const guests = Number(u.searchParams.get("guests") || 1);
-  if (!isValidDate(ci) || !isValidDate(co) || nightsBetween(ci, co) < 1 || nightsBetween(ci, co) > 60) return NextResponse.json({ error: "invalid dates" }, { status: 400 });
+  if (!isValidDate(ci) || !isValidDate(co) || nightsBetween(ci, co) < 1 || nightsBetween(ci, co) > 60 || ci < today()) return NextResponse.json({ error: "invalid dates" }, { status: 400 });
+  await expireUnpaidHolds();
   const rooms = await db.prepare("SELECT id,name,type,capacity,description FROM rooms WHERE active=1 AND capacity>=?").all(guests) as { id: number; name: string; type: string; capacity: number; description: string }[];
   const free = (await Promise.all(rooms.map(async (r) => ((await isRoomFree(r.id, ci, co)) ? r : null)))).filter((r) => r !== null);
   const out = await Promise.all(free.map(async (r) => {

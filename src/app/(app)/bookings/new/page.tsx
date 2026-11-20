@@ -19,7 +19,7 @@ export default async function NewBooking({ searchParams }: { searchParams: Promi
   const q = roomId ? await quote({ roomId, checkIn: ci, checkOut: co, services: svc, couponCode: sp.coupon }) : null;
   return (
     <>
-      <PageHeader title="New booking" sub="Written straight to the same database the website reads — availability updates instantly." />
+      <PageHeader title="New booking" sub="Confirmed only when the FULL amount is received; otherwise saved as pending and the room is held for a limited time." />
       <Flash err={sp.err} />
       <form className="mb-4 grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-5" method="get">
         <Field label="Check-in"><input type="date" name="check_in" defaultValue={ci} className={inputCls} /></Field>
@@ -68,7 +68,7 @@ export default async function NewBooking({ searchParams }: { searchParams: Promi
                 <input name={`qty_${s.id}`} type="number" min={1} defaultValue={1} className="ml-auto w-16 rounded border px-1 py-0.5" aria-label={`Quantity for ${s.name}`} /></label>))}</div>
           </Card>
         )}
-        <Card title="Payment received now">
+        <Card title="Payment received now (enter the full total to confirm)">
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Amount ₹"><input name="paid" type="number" min={0} defaultValue={0} className={inputCls} /></Field>
             <Field label="Method"><select name="payment_method" className={inputCls}><option value="upi">UPI</option><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank transfer</option><option value="ota">Paid via OTA</option></select></Field>

@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { expireUnpaidHolds } from "@/lib/bookings";
 import { today, inr, fmtDate } from "@/lib/dates";
-import { Card, PageHeader, Table, Td, Badge, btn, btnGhost, inputCls } from "@/components/ui";
+import { Card, Flash, PageHeader, Table, Td, Badge, btn, btnGhost, inputCls } from "@/components/ui";
 
 type Row = { id: number; code: string; name: string; phone: string | null; room: string; check_in: string; check_out: string; status: string; total: number; paid: number; source: string; confirmation_status: string };
 
-export default async function Bookings({ searchParams }: { searchParams: Promise<{ view?: string; q?: string; filter?: string }> }) {
+export default async function Bookings({ searchParams }: { searchParams: Promise<{ view?: string; q?: string; filter?: string; msg?: string; err?: string }> }) {
   const sp = await searchParams;
+  await expireUnpaidHolds();
   const view = sp.view || "upcoming";
   const t = today();
   const where = view === "past" ? "b.check_out<=? OR b.status IN ('completed')" : view === "cancelled" ? "b.status='cancelled' AND ?=?" : view === "all" ? "?=?" : "b.check_out>? AND b.status NOT IN ('cancelled','completed')";
@@ -21,6 +23,7 @@ export default async function Bookings({ searchParams }: { searchParams: Promise
   return (
     <>
       <PageHeader title="Bookings" action={<Link href="/bookings/new" className={btn}>+ New booking</Link>} />
+      <Flash msg={sp.msg} err={sp.err} />
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {tabs.map(([v, l]) => <Link key={v} href={`/bookings?view=${v}`} className={view === v ? btn : btnGhost}>{l}</Link>)}
         <form className="ml-auto flex gap-2"><input type="hidden" name="view" value={view} /><input name="q" defaultValue={sp.q} placeholder="Search name, phone, code" className={inputCls + " w-64"} /><button className={btnGhost}>Search</button></form>
