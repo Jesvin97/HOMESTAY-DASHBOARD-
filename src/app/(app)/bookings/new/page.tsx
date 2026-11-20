@@ -11,11 +11,12 @@ export default async function NewBooking({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const ci = isValidDate(sp.check_in || "") ? sp.check_in : addDays(today(), 1);
   const co = isValidDate(sp.check_out || "") && sp.check_out > ci ? sp.check_out : addDays(ci, 1);
-  const rooms = db.prepare("SELECT * FROM rooms WHERE active=1 ORDER BY name").all() as Room[];
-  const services = db.prepare("SELECT * FROM services WHERE active=1 ORDER BY category,name").all() as { id: number; name: string; price: number; included: number; unit: string }[];
-  const roomId = Number(sp.room_id) || rooms.find((r) => isRoomFree(r.id, ci, co))?.id || rooms[0]?.id;
+  const rooms = await db.prepare("SELECT * FROM rooms WHERE active=1 ORDER BY name").all() as Room[];
+  const services = await db.prepare("SELECT * FROM services WHERE active=1 ORDER BY category,name").all() as { id: number; name: string; price: number; included: number; unit: string }[];
+  const freeMap = Object.fromEntries(await Promise.all(rooms.map(async (r) => [r.id, await isRoomFree(r.id, ci, co)] as const)));
+  const roomId = Number(sp.room_id) || rooms.find((r) => freeMap[r.id])?.id || rooms[0]?.id;
   const svc = (Array.isArray(sp.service) ? sp.service : sp.service ? [sp.service] : []).map((id) => ({ id: Number(id), qty: 1 }));
-  const q = roomId ? quote({ roomId, checkIn: ci, checkOut: co, services: svc, couponCode: sp.coupon }) : null;
+  const q = roomId ? await quote({ roomId, checkIn: ci, checkOut: co, services: svc, couponCode: sp.coupon }) : null;
   return (
     <>
       <PageHeader title="New booking" sub="Written straight to the same database the website reads — availability updates instantly." />
@@ -23,7 +24,7 @@ export default async function NewBooking({ searchParams }: { searchParams: Promi
       <form className="mb-4 grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-5" method="get">
         <Field label="Check-in"><input type="date" name="check_in" defaultValue={ci} className={inputCls} /></Field>
         <Field label="Check-out"><input type="date" name="check_out" defaultValue={co} className={inputCls} /></Field>
-        <Field label="Room"><select name="room_id" defaultValue={roomId} className={inputCls}>{rooms.map((r) => <option key={r.id} value={r.id}>{r.name} — {isRoomFree(r.id, ci, co) ? "free" : "BOOKED"}</option>)}</select></Field>
+        <Field label="Room"><select name="room_id" defaultValue={roomId} className={inputCls}>{rooms.map((r) => <option key={r.id} value={r.id}>{r.name} — {freeMap[r.id] ? "free" : "BOOKED"}</option>)}</select></Field>
         <Field label="Coupon"><input name="coupon" defaultValue={sp.coupon} className={inputCls} /></Field>
         <div className="flex items-end"><button className={btnGhost + " w-full"}>Check price</button></div>
       </form>
@@ -37,7 +38,7 @@ export default async function NewBooking({ searchParams }: { searchParams: Promi
             <dt className="font-semibold">Total</dt><dd className="text-right font-semibold">{inr(q.total)}</dd>
           </dl>
           {q.couponError && <p className="mt-2 text-sm text-rose-700">Coupon: {q.couponError}</p>}
-          {!isRoomFree(roomId, ci, co) && <p className="mt-2 text-sm font-medium text-rose-700">This room is not available for these dates.</p>}
+          {!freeMap[roomId] && <p className="mt-2 text-sm font-medium text-rose-700">This room is not available for these dates.</p>}
           <p className="mt-1 text-xs text-slate-500">{nightsBetween(ci, co)} night(s) · seasonal rates applied per night</p>
         </Card>
       )}

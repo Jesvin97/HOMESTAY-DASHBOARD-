@@ -10,13 +10,13 @@ export default async function Bookings({ searchParams }: { searchParams: Promise
   const view = sp.view || "upcoming";
   const t = today();
   const where = view === "past" ? "b.check_out<=? OR b.status IN ('completed')" : view === "cancelled" ? "b.status='cancelled' AND ?=?" : view === "all" ? "?=?" : "b.check_out>? AND b.status NOT IN ('cancelled','completed')";
-  const params: unknown[] = view === "cancelled" || view === "all" ? [1, 1] : [t];
+  const params: (string | number)[] = view === "cancelled" || view === "all" ? [1, 1] : [t];
   let sql = `SELECT b.id,b.code,g.name,g.phone,r.name room,b.check_in,b.check_out,b.status,b.total,b.paid,b.source,b.confirmation_status FROM bookings b JOIN guests g ON g.id=b.guest_id JOIN rooms r ON r.id=b.room_id WHERE (${where})`;
   if (view === "past") sql += " AND b.status!='cancelled'";
   if (sp.filter === "unsent") sql += " AND b.status IN ('confirmed','pending') AND b.confirmation_status IN ('not_sent','failed')";
   if (sp.q) { sql += " AND (g.name LIKE ? OR g.phone LIKE ? OR b.code LIKE ? OR g.email LIKE ?)"; const l = `%${sp.q}%`; params.push(l, l, l, l); }
   sql += view === "past" || view === "all" || view === "cancelled" ? " ORDER BY b.check_in DESC LIMIT 300" : " ORDER BY b.check_in LIMIT 300";
-  const rows = db.prepare(sql).all(...params) as Row[];
+  const rows = await db.prepare(sql).all(...params) as Row[];
   const tabs = [["upcoming", "Upcoming"], ["past", "Past"], ["cancelled", "Cancelled"], ["all", "All"]];
   return (
     <>

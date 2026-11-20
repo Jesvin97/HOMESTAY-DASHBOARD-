@@ -7,9 +7,9 @@ import { bySource } from "@/lib/stats";
 
 export default async function Channels({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const sp = await searchParams; await requireUser("manager");
-  const rooms = db.prepare("SELECT id,name FROM rooms WHERE active=1").all() as { id: number; name: string }[];
-  const ch = db.prepare("SELECT * FROM channels ORDER BY id").all() as { id: number; name: string; commission_pct: number; room_id: number | null; ical_url: string | null; last_sync: string | null; last_result: string | null }[];
-  const src = bySource();
+  const rooms = await db.prepare("SELECT id,name FROM rooms WHERE active=1").all() as { id: number; name: string }[];
+  const ch = await db.prepare("SELECT * FROM channels ORDER BY id").all() as { id: number; name: string; commission_pct: number; room_id: number | null; ical_url: string | null; last_sync: string | null; last_result: string | null }[];
+  const src = await bySource();
   const base = process.env.APP_URL || "http://localhost:3000";
   return (
     <>

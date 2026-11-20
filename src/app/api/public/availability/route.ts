@@ -11,11 +11,12 @@ export async function GET(req: Request) {
   const ci = u.searchParams.get("checkIn") || "", co = u.searchParams.get("checkOut") || "";
   const guests = Number(u.searchParams.get("guests") || 1);
   if (!isValidDate(ci) || !isValidDate(co) || nightsBetween(ci, co) < 1 || nightsBetween(ci, co) > 60) return NextResponse.json({ error: "invalid dates" }, { status: 400 });
-  const rooms = db.prepare("SELECT id,name,type,capacity,description FROM rooms WHERE active=1 AND capacity>=?").all(guests) as { id: number; name: string; type: string; capacity: number; description: string }[];
-  return NextResponse.json({
-    rooms: rooms.filter((r) => isRoomFree(r.id, ci, co)).map((r) => {
-      const q = quote({ roomId: r.id, checkIn: ci, checkOut: co, couponCode: u.searchParams.get("coupon") });
-      return { ...r, nights: q.nights, roomAmount: q.roomAmount, discount: q.discount, gst: q.gst, total: q.total, couponError: q.couponError ?? null, photos: db.prepare("SELECT url,caption FROM photos WHERE room_id=? ORDER BY sort").all(r.id) };
-    }),
-  });
+  const rooms = await db.prepare("SELECT id,name,type,capacity,description FROM rooms WHERE active=1 AND capacity>=?").all(guests) as { id: number; name: string; type: string; capacity: number; description: string }[];
+  const free = (await Promise.all(rooms.map(async (r) => ((await isRoomFree(r.id, ci, co)) ? r : null)))).filter((r) => r !== null);
+  const out = await Promise.all(free.map(async (r) => {
+    const q = await quote({ roomId: r.id, checkIn: ci, checkOut: co, couponCode: u.searchParams.get("coupon") });
+    const photos = await db.prepare("SELECT url,caption FROM photos WHERE room_id=? ORDER BY sort").all(r.id);
+    return { ...r, nights: q.nights, roomAmount: q.roomAmount, discount: q.discount, gst: q.gst, total: q.total, couponError: q.couponError ?? null, photos };
+  }));
+  return NextResponse.json({ rooms: out });
 }

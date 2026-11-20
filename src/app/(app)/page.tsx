@@ -6,7 +6,7 @@ import { inr, fmtDate } from "@/lib/dates";
 
 export default async function Overview({ searchParams }: { searchParams: Promise<{ denied?: string }> }) {
   const sp = await searchParams;
-  const o = overview(), k = kpis(), series = monthlySeries(12), src = bySource();
+  const [o, k, series, src] = await Promise.all([overview(), kpis(), monthlySeries(12), bySource()]);
   const delta = o.prevRevenue ? Math.round(((o.monthRevenue - o.prevRevenue) / o.prevRevenue) * 100) : null;
   const actions = [
     o.pendingRefunds && { href: "/refunds", t: `${o.pendingRefunds} refund(s) awaiting your approval` },

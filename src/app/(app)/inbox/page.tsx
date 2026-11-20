@@ -5,9 +5,9 @@ import { fmtDate } from "@/lib/dates";
 
 export default async function Inbox({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const sp = await searchParams;
-  const complaints = db.prepare(`SELECT c.*, g.name gname FROM complaints c LEFT JOIN guests g ON g.id=c.guest_id ORDER BY (c.status='resolved'), c.id DESC LIMIT 100`).all() as { id: number; subject: string; body: string | null; severity: string; status: string; source: string; gname: string | null; created_at: string; resolution: string | null }[];
-  const mails = db.prepare("SELECT direction,kind,to_addr,from_addr,subject,status,error,created_at FROM emails ORDER BY id DESC LIMIT 40").all() as { direction: string; kind: string; to_addr: string | null; from_addr: string | null; subject: string; status: string; error: string | null; created_at: string }[];
-  const guests = db.prepare("SELECT id,name FROM guests WHERE erased_at IS NULL ORDER BY name LIMIT 500").all() as { id: number; name: string }[];
+  const complaints = await db.prepare(`SELECT c.*, g.name gname FROM complaints c LEFT JOIN guests g ON g.id=c.guest_id ORDER BY (c.status='resolved'), c.id DESC LIMIT 100`).all() as { id: number; subject: string; body: string | null; severity: string; status: string; source: string; gname: string | null; created_at: string; resolution: string | null }[];
+  const mails = await db.prepare("SELECT direction,kind,to_addr,from_addr,subject,status,error,created_at FROM emails ORDER BY id DESC LIMIT 40").all() as { direction: string; kind: string; to_addr: string | null; from_addr: string | null; subject: string; status: string; error: string | null; created_at: string }[];
+  const guests = await db.prepare("SELECT id,name FROM guests WHERE erased_at IS NULL ORDER BY name LIMIT 500").all() as { id: number; name: string }[];
   return (
     <>
       <PageHeader title="Inbox & complaints" sub="Complaints from your business mailbox and manual entries; plus a log of every email the system sent." action={<form action={syncInboxAction}><button className={btn}>Sync mailbox</button></form>} />

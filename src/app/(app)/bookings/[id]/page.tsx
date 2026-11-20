@@ -10,13 +10,13 @@ type B = { id: number; code: string; guest_id: number; gname: string; phone: str
 
 export default async function BookingPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ msg?: string; err?: string }> }) {
   const { id } = await params; const sp = await searchParams;
-  const b = db.prepare(`SELECT b.*, g.name gname, g.phone, g.email, r.name room FROM bookings b JOIN guests g ON g.id=b.guest_id JOIN rooms r ON r.id=b.room_id WHERE b.id=?`).get(id) as B | undefined;
+  const b = await db.prepare(`SELECT b.*, g.name gname, g.phone, g.email, r.name room FROM bookings b JOIN guests g ON g.id=b.guest_id JOIN rooms r ON r.id=b.room_id WHERE b.id=?`).get(id) as B | undefined;
   if (!b) notFound();
-  const svc = db.prepare("SELECT s.name, bs.qty, bs.price FROM booking_services bs JOIN services s ON s.id=bs.service_id WHERE bs.booking_id=?").all(b.id) as { name: string; qty: number; price: number }[];
-  const refunds = db.prepare("SELECT * FROM refunds WHERE booking_id=?").all(b.id) as { id: number; amount: number; status: string; policy_note: string }[];
-  const mails = db.prepare("SELECT kind,status,to_addr,created_at,error FROM emails WHERE booking_id=? ORDER BY id DESC").all(b.id) as { kind: string; status: string; to_addr: string; created_at: string; error: string | null }[];
+  const svc = await db.prepare("SELECT s.name, bs.qty, bs.price FROM booking_services bs JOIN services s ON s.id=bs.service_id WHERE bs.booking_id=?").all(b.id) as { name: string; qty: number; price: number }[];
+  const refunds = await db.prepare("SELECT * FROM refunds WHERE booking_id=?").all(b.id) as { id: number; amount: number; status: string; policy_note: string }[];
+  const mails = await db.prepare("SELECT kind,status,to_addr,created_at,error FROM emails WHERE booking_id=? ORDER BY id DESC").all(b.id) as { kind: string; status: string; to_addr: string; created_at: string; error: string | null }[];
   const active = !["cancelled", "completed", "no_show"].includes(b.status);
-  const pol = active ? refundFor(b.check_in, b.paid) : null;
+  const pol = active ? await refundFor(b.check_in, b.paid) : null;
   const hid = <input type="hidden" name="id" value={b.id} />;
   return (
     <>

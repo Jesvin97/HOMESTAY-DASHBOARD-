@@ -7,14 +7,14 @@ async function change(fd: FormData) {
   "use server";
   const u = await requireUser();
   const cur = String(fd.get("current")), next = String(fd.get("next"));
-  const row = db.prepare("SELECT password_hash FROM users WHERE id=?").get(u.id) as { password_hash: string };
+  const row = await db.prepare("SELECT password_hash FROM users WHERE id=?").get(u.id) as { password_hash: string };
   if (!(await verifyPassword(cur, row.password_hash))) redirect("/change-password?err=" + encodeURIComponent("Current password is wrong."));
   const p = passwordProblem(next);
   if (p) redirect("/change-password?err=" + encodeURIComponent(p));
-  db.prepare("UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?").run(await hashPassword(next), u.id);
+  await db.prepare("UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?").run(await hashPassword(next), u.id);
   // revoke every other session after a password change
-  db.prepare("UPDATE sessions SET revoked=1 WHERE user_id=?").run(u.id);
-  audit(u, "password_changed", "user", u.id);
+  await db.prepare("UPDATE sessions SET revoked=1 WHERE user_id=?").run(u.id);
+  await audit(u, "password_changed", "user", u.id);
   redirect("/login");
 }
 

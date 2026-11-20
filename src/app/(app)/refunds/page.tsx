@@ -9,7 +9,7 @@ type R = { id: number; booking_id: number; code: string; gname: string; amount: 
 
 export default async function Refunds({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const sp = await searchParams; const u = await requireUser();
-  const rows = db.prepare(`SELECT r.*, b.code, g.name gname, (SELECT name FROM users WHERE id=r.proposed_by) proposer FROM refunds r JOIN bookings b ON b.id=r.booking_id JOIN guests g ON g.id=b.guest_id ORDER BY (r.status IN ('proposed','failed')) DESC, r.id DESC LIMIT 200`).all() as R[];
+  const rows = await db.prepare(`SELECT r.*, b.code, g.name gname, (SELECT name FROM users WHERE id=r.proposed_by) proposer FROM refunds r JOIN bookings b ON b.id=r.booking_id JOIN guests g ON g.id=b.guest_id ORDER BY (r.status IN ('proposed','failed')) DESC, r.id DESC LIMIT 200`).all() as R[];
   const live = !!process.env.RAZORPAYX_KEY_ID;
   return (
     <>

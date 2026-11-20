@@ -8,9 +8,9 @@ type T = { id: number; status: string; token: string; rating: number | null; tex
 
 export default async function Testimonials({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const sp = await searchParams;
-  const rows = db.prepare(`SELECT t.id,t.status,t.token,t.rating,t.text,t.publish,g.name,g.phone,g.consent_whatsapp,b.check_out,b.code FROM testimonials t JOIN guests g ON g.id=t.guest_id LEFT JOIN bookings b ON b.id=t.booking_id WHERE g.erased_at IS NULL ORDER BY t.id DESC LIMIT 100`).all() as T[];
+  const rows = await db.prepare(`SELECT t.id,t.status,t.token,t.rating,t.text,t.publish,g.name,g.phone,g.consent_whatsapp,b.check_out,b.code FROM testimonials t JOIN guests g ON g.id=t.guest_id LEFT JOIN bookings b ON b.id=t.booking_id WHERE g.erased_at IS NULL ORDER BY t.id DESC LIMIT 100`).all() as T[];
   const base = process.env.APP_URL || "http://localhost:3000";
-  const prop = getSetting("property_name");
+  const prop = await getSetting("property_name");
   return (
     <>
       <PageHeader title="Testimonials via WhatsApp" sub="After check-out, guests who agreed to WhatsApp are queued here. You tap Send — it opens WhatsApp with the message ready." />

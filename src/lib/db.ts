@@ -1,19 +1,89 @@
-import Database from "better-sqlite3";
+/**
+ * Database access. Two interchangeable backends behind ONE async API:
+ *   - Cloudflare D1 over its REST API   (when CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_D1_DATABASE_ID + CLOUDFLARE_API_TOKEN are set)
+ *   - local SQLite file via better-sqlite3 (development / tests / seeding)
+ * D1 has no interactive transactions, so multi-statement atomic work uses db.batch([...]) (atomic on both backends).
+ */
 import fs from "fs";
 import path from "path";
 
-const file = process.env.DATABASE_FILE || path.join(process.cwd(), "data", "homestay.db");
+type P = string | number | null | undefined | boolean | bigint;
+export type RunResult = { changes: number; lastInsertRowid: number };
+export type Stmt = { sql: string; params: P[] };
+export const st = (sql: string, ...params: P[]): Stmt => ({ sql, params });
+const norm = (p: P[]) => p.map((v) => (v === undefined ? null : typeof v === "boolean" ? (v ? 1 : 0) : typeof v === "bigint" ? Number(v) : v));
+
+interface Backend {
+  all(sql: string, p: P[]): Promise<Record<string, unknown>[]>;
+  run(sql: string, p: P[]): Promise<RunResult>;
+  batch(stmts: Stmt[]): Promise<RunResult[]>;
+  exec(sql: string): Promise<void>;
+}
+
+/* ---------------- Cloudflare D1 (REST) ---------------- */
+function d1Backend(): Backend {
+  const acct = process.env.CLOUDFLARE_ACCOUNT_ID!, dbid = process.env.CLOUDFLARE_D1_DATABASE_ID!, token = process.env.CLOUDFLARE_API_TOKEN!;
+  const url = `${process.env.CLOUDFLARE_API_BASE || "https://api.cloudflare.com/client/v4"}/accounts/${acct}/d1/database/${dbid}/query`;
+  type R = { results?: Record<string, unknown>[]; meta?: { changes?: number; last_row_id?: number } };
+  async function call(body: unknown): Promise<R[]> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const r = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
+        const j = (await r.json()) as { success: boolean; errors?: { message: string }[]; result?: R[] };
+        if (!r.ok || !j.success) {
+          const msg = j.errors?.map((e) => e.message).join("; ") || `HTTP ${r.status}`;
+          if (r.status >= 500 || r.status === 429) { lastErr = new Error("D1: " + msg); await new Promise((x) => setTimeout(x, 300 * (attempt + 1))); continue; }
+          throw new Error("D1: " + msg);
+        }
+        return j.result ?? [];
+      } catch (e) { lastErr = e; if (!(e instanceof TypeError)) throw e; await new Promise((x) => setTimeout(x, 300 * (attempt + 1))); }
+    }
+    throw lastErr;
+  }
+  const meta = (r: R): RunResult => ({ changes: r.meta?.changes ?? 0, lastInsertRowid: r.meta?.last_row_id ?? 0 });
+  return {
+    async all(sql, p) { return (await call({ sql, params: norm(p) }))[0]?.results ?? []; },
+    async run(sql, p) { return meta((await call({ sql, params: norm(p) }))[0] ?? {}); },
+    async batch(stmts) { if (!stmts.length) return []; return (await call({ batch: stmts.map((s) => ({ sql: s.sql, params: norm(s.params) })) })).map(meta); },
+    async exec(sql) { for (const s of splitSql(sql)) await call({ sql: s }); },
+  };
+}
+
+/* ---------------- local SQLite ---------------- */
+function sqliteBackend(): Backend {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Database = require("better-sqlite3") as typeof import("better-sqlite3");
+  const file = process.env.DATABASE_FILE || path.join(process.cwd(), "data", "homestay.db");
+  if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
+  const raw = new Database(file);
+  raw.pragma("journal_mode = WAL");
+  raw.pragma("foreign_keys = ON");
+  const runSync = (sql: string, p: P[]): RunResult => { const r = raw.prepare(sql).run(...norm(p)); return { changes: r.changes, lastInsertRowid: Number(r.lastInsertRowid) }; };
+  return {
+    async all(sql, p) { return raw.prepare(sql).all(...norm(p)) as Record<string, unknown>[]; },
+    async run(sql, p) { return runSync(sql, p); },
+    async batch(stmts) { return raw.transaction(() => stmts.map((s) => runSync(s.sql, s.params)))(); },
+    async exec(sql) { raw.exec(sql); },
+  };
+}
+
+export const splitSql = (sql: string) => sql.split(/;\s*\n/).map((s) => s.trim()).filter(Boolean);
+export const usingD1 = !!(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_D1_DATABASE_ID && process.env.CLOUDFLARE_API_TOKEN);
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
   password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'staff', -- owner | manager | staff
   failed_attempts INTEGER NOT NULL DEFAULT 0, locked_until TEXT, active INTEGER NOT NULL DEFAULT 1,
-  must_change_password INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  must_change_password INTEGER NOT NULL DEFAULT 0,
+  totp_secret_enc TEXT, totp_enabled INTEGER NOT NULL DEFAULT 0, backup_codes TEXT, last_totp_step INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL,
-  last_seen TEXT NOT NULL, ip TEXT, user_agent TEXT, revoked INTEGER NOT NULL DEFAULT 0
+  last_seen TEXT NOT NULL, ip TEXT, user_agent TEXT, revoked INTEGER NOT NULL DEFAULT 0,
+  mfa_ok INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY, ts TEXT NOT NULL DEFAULT (datetime('now')), user_id INTEGER, user_email TEXT,
@@ -163,30 +233,37 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   total_rooms_note: "",
 };
 
-type DB = Database.Database;
-const g = globalThis as unknown as { __db?: DB };
 
-function open(): DB {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const db = new Database(file);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  db.exec(SCHEMA);
-  const ins = db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)");
-  for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) ins.run(k, v);
-  return db;
+const g = globalThis as unknown as { __be?: Backend; __ready?: Promise<void> };
+const be: Backend = g.__be ?? (g.__be = usingD1 ? d1Backend() : sqliteBackend());
+
+/** Create tables + default settings. Local SQLite: automatic on first use. D1: run `npm run db:migrate` (never at request time). */
+export async function migrate() {
+  await be.exec(SCHEMA);
+  await be.batch(Object.entries(DEFAULT_SETTINGS).map(([k, v]) => st("INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)", k, v)));
 }
+if (!g.__ready) g.__ready = usingD1 ? Promise.resolve() : migrate();
+const ready = () => g.__ready!;
 
-export const db: DB = g.__db ?? (g.__db = open());
+export const db = {
+  prepare(sql: string) {
+    return {
+      async get<T = any>(...p: P[]): Promise<T | undefined> { await ready(); return (await be.all(sql, p))[0] as T | undefined; }, // eslint-disable-line @typescript-eslint/no-explicit-any
+      async all<T = any>(...p: P[]): Promise<T[]> { await ready(); return (await be.all(sql, p)) as T[]; }, // eslint-disable-line @typescript-eslint/no-explicit-any
+      async run(...p: P[]): Promise<RunResult> { await ready(); return be.run(sql, p); },
+    };
+  },
+  async batch(stmts: Stmt[]) { await ready(); return be.batch(stmts); },
+};
 
-export function getSetting(key: string): string {
-  const r = db.prepare("SELECT value FROM settings WHERE key=?").get(key) as { value: string } | undefined;
+export async function getSetting(key: string): Promise<string> {
+  const r = await db.prepare("SELECT value FROM settings WHERE key=?").get<{ value: string }>(key);
   return r?.value ?? DEFAULT_SETTINGS[key] ?? "";
 }
-export function setSetting(key: string, value: string) {
-  db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, value);
+export async function setSetting(key: string, value: string) {
+  await db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, value);
 }
-export function allSettings(): Record<string, string> {
-  const rows = db.prepare("SELECT key,value FROM settings").all() as { key: string; value: string }[];
-  return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+export async function allSettings(): Promise<Record<string, string>> {
+  const rows = await db.prepare("SELECT key,value FROM settings").all<{ key: string; value: string }>();
+  return { ...DEFAULT_SETTINGS, ...Object.fromEntries(rows.map((r) => [r.key, r.value])) };
 }

@@ -5,13 +5,13 @@ export const dynamic = "force-dynamic";
 
 async function doUnsub(fd: FormData) {
   "use server";
-  const g = db.prepare("SELECT id FROM guests WHERE unsub_token=?").get(String(fd.get("token"))) as { id: number } | undefined;
-  if (g) setConsent(g.id, "marketing_email", false, "unsubscribe_link");
+  const g = await db.prepare("SELECT id FROM guests WHERE unsub_token=?").get(String(fd.get("token"))) as { id: number } | undefined;
+  if (g) await setConsent(g.id, "marketing_email", false, "unsubscribe_link");
 }
 
 export default async function Unsub({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const g = db.prepare("SELECT id,consent_marketing FROM guests WHERE unsub_token=?").get(token) as { id: number; consent_marketing: number } | undefined;
+  const g = await db.prepare("SELECT id,consent_marketing FROM guests WHERE unsub_token=?").get(token) as { id: number; consent_marketing: number } | undefined;
   return (
     <div className="mx-auto mt-24 max-w-md rounded-xl border bg-white p-6 text-center">
       {!g ? <p>This link is no longer valid.</p> : g.consent_marketing ? (

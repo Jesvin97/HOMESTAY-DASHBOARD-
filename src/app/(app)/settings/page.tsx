@@ -5,7 +5,7 @@ import { Card, Field, Flash, PageHeader, btn, inputCls } from "@/components/ui";
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const sp = await searchParams; await requireUser("owner");
-  const s = allSettings();
+  const s = await allSettings();
   const pol = (JSON.parse(s.cancellation_policy) as { daysBefore: number; refundPct: number }[]).sort((a, b) => b.daysBefore - a.daysBefore);
   const rows = [0, 1, 2, 3].map((i) => pol[i] ?? { daysBefore: "", refundPct: "" });
   const env = [["SMTP_URL", "Sending email"], ["IMAP_HOST", "Reading complaints from mailbox"], ["RAZORPAYX_KEY_ID", "Live UPI refunds"], ["WEBSITE_API_KEY", "Website → dashboard bookings"], ["DATA_KEY", "Aadhaar encryption"], ["SESSION_SECRET", "Secure sessions"]];

@@ -1,17 +1,17 @@
 import { db, getSetting } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { adjustPointsAction, saveLoyaltySettingsAction } from "@/app/actions";
-import { tierFor } from "@/lib/bookings";
+import { loadTiers, tierName } from "@/lib/bookings";
 import { Card, Field, Flash, PageHeader, Table, Td, btn, btnGhost, inputCls } from "@/components/ui";
 import { fmtDate } from "@/lib/dates";
 
 export default async function Loyalty({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const sp = await searchParams; await requireUser("manager");
-  const tiers = JSON.parse(getSetting("loyalty_tiers")) as { name: string; minStays: number }[];
-  const top = db.prepare(`SELECT g.id,g.name,g.loyalty_points,(SELECT COUNT(*) FROM bookings b WHERE b.guest_id=g.id AND b.status='completed') stays FROM guests g WHERE erased_at IS NULL ORDER BY loyalty_points DESC LIMIT 25`).all() as { id: number; name: string; loyalty_points: number; stays: number }[];
-  const ledger = db.prepare("SELECT l.points,l.reason,l.created_at,g.name FROM loyalty_ledger l JOIN guests g ON g.id=l.guest_id ORDER BY l.id DESC LIMIT 15").all() as { points: number; reason: string; created_at: string; name: string }[];
-  const liability = (db.prepare("SELECT COALESCE(SUM(loyalty_points),0) s FROM guests").get() as { s: number }).s * Number(getSetting("loyalty_point_value"));
-  const guests = db.prepare("SELECT id,name FROM guests WHERE erased_at IS NULL ORDER BY name LIMIT 500").all() as { id: number; name: string }[];
+  const tiers = await loadTiers();
+  const top = await db.prepare(`SELECT g.id,g.name,g.loyalty_points,(SELECT COUNT(*) FROM bookings b WHERE b.guest_id=g.id AND b.status='completed') stays FROM guests g WHERE erased_at IS NULL ORDER BY loyalty_points DESC LIMIT 25`).all() as { id: number; name: string; loyalty_points: number; stays: number }[];
+  const ledger = await db.prepare("SELECT l.points,l.reason,l.created_at,g.name FROM loyalty_ledger l JOIN guests g ON g.id=l.guest_id ORDER BY l.id DESC LIMIT 15").all() as { points: number; reason: string; created_at: string; name: string }[];
+  const liability = (await db.prepare("SELECT COALESCE(SUM(loyalty_points),0) s FROM guests").get() as { s: number }).s * Number(await getSetting("loyalty_point_value"));
+  const guests = await db.prepare("SELECT id,name FROM guests WHERE erased_at IS NULL ORDER BY name LIMIT 500").all() as { id: number; name: string }[];
   return (
     <>
       <PageHeader title="Loyalty & points" sub={`Outstanding points are worth about ₹${liability.toLocaleString("en-IN")} if all redeemed.`} />
@@ -19,10 +19,10 @@ export default async function Loyalty({ searchParams }: { searchParams: Promise<
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Rules">
           <form action={saveLoyaltySettingsAction} className="grid gap-3 sm:grid-cols-2">
-            <Field label="Points earned per ₹100 spent"><input name="loyalty_points_per_100" type="number" step="0.5" defaultValue={getSetting("loyalty_points_per_100")} className={inputCls} /></Field>
-            <Field label="₹ value of 1 point"><input name="loyalty_point_value" type="number" step="0.1" defaultValue={getSetting("loyalty_point_value")} className={inputCls} /></Field>
-            <Field label="Welcome bonus (points)"><input name="loyalty_welcome_bonus" type="number" defaultValue={getSetting("loyalty_welcome_bonus")} className={inputCls} /></Field>
-            <Field label="Bonus for leaving a review"><input name="loyalty_review_bonus" type="number" defaultValue={getSetting("loyalty_review_bonus")} className={inputCls} /></Field>
+            <Field label="Points earned per ₹100 spent"><input name="loyalty_points_per_100" type="number" step="0.5" defaultValue={await getSetting("loyalty_points_per_100")} className={inputCls} /></Field>
+            <Field label="₹ value of 1 point"><input name="loyalty_point_value" type="number" step="0.1" defaultValue={await getSetting("loyalty_point_value")} className={inputCls} /></Field>
+            <Field label="Welcome bonus (points)"><input name="loyalty_welcome_bonus" type="number" defaultValue={await getSetting("loyalty_welcome_bonus")} className={inputCls} /></Field>
+            <Field label="Bonus for leaving a review"><input name="loyalty_review_bonus" type="number" defaultValue={await getSetting("loyalty_review_bonus")} className={inputCls} /></Field>
             <Field label="Tier 2 name / stays"><div className="flex gap-1"><input name="t1n" defaultValue={tiers[1]?.name} className={inputCls} /><input name="t1m" type="number" defaultValue={tiers[1]?.minStays} className={inputCls + " w-20"} /></div></Field>
             <Field label="Tier 3 name / stays"><div className="flex gap-1"><input name="t2n" defaultValue={tiers[2]?.name} className={inputCls} /><input name="t2m" type="number" defaultValue={tiers[2]?.minStays} className={inputCls + " w-20"} /></div></Field>
             <button className={btn}>Save rules</button>
@@ -41,7 +41,7 @@ export default async function Loyalty({ searchParams }: { searchParams: Promise<
         </Card>
       </div>
       <Card title="Top members" className="mt-4">
-        <Table head={["Guest", "Tier", "Stays", "Points"]}>{top.map((g) => <tr key={g.id}><Td>{g.name}</Td><Td>{tierFor(g.stays)}</Td><Td>{g.stays}</Td><Td>{g.loyalty_points}</Td></tr>)}</Table>
+        <Table head={["Guest", "Tier", "Stays", "Points"]}>{top.map((g) => <tr key={g.id}><Td>{g.name}</Td><Td>{tierName(tiers, g.stays)}</Td><Td>{g.stays}</Td><Td>{g.loyalty_points}</Td></tr>)}</Table>
       </Card>
     </>
   );

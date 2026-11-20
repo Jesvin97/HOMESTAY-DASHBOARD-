@@ -8,7 +8,9 @@
     "start": "next start",
     "seed": "tsx scripts/seed.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.mts"
+    "test": "tsx --test tests/*.test.mts",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "mfa:reset": "tsx scripts/reset-mfa.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -17,6 +19,7 @@
     "jose": "^6.2.18",
     "next": "^15.5.29",
     "nodemailer": "^10.6.1",
+    "qrcode": "^1.5.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "recharts": "^3.11.0",
@@ -27,6 +30,7 @@
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.6",
     "@types/nodemailer": "^8.0.2",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.7.0",

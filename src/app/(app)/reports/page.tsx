@@ -3,8 +3,8 @@ import { Card, PageHeader, Stat, Table, Td } from "@/components/ui";
 import { RevenueChart, BookingsChart, SourceChart, RoomChart } from "@/components/charts";
 import { inr } from "@/lib/dates";
 
-export default function Reports() {
-  const m = monthlySeries(12), src = bySource(), rooms = byRoom(), cp = byCoupon(), k = kpis();
+export default async function Reports() {
+  const [m, src, rooms, cp, k] = await Promise.all([monthlySeries(12), bySource(), byRoom(), byCoupon(), kpis()]);
   return (
     <>
       <PageHeader title="Reports" sub="Trailing 12 months. Revenue excludes GST (it isn't your income)." />

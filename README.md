@@ -2,6 +2,22 @@
 
 Next.js 15 + SQLite (better-sqlite3). One database is shared by the dashboard **and** the website, so a booking made by the owner, the website or an OTA feed shows up everywhere and can't be double-sold.
 
+## Database: Cloudflare D1
+
+The app talks to **Cloudflare D1** through its REST API when `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_D1_DATABASE_ID` and `CLOUDFLARE_API_TOKEN` are set; otherwise it uses a local SQLite file (dev/tests). Same SQL either way.
+
+```bash
+# 1. create an API token: Cloudflare dashboard → My Profile → API Tokens → Custom → Account · D1 · Edit
+# 2. put the 3 values in .env (account id + database id are on the D1 database page)
+npm run db:migrate   # creates the tables IF NOT EXISTS (see migrations/0001_init.sql — or run it with `wrangler d1 execute`)
+npm run seed         # optional demo data + first owner login
+```
+Notes: D1 has no interactive transactions, so multi-step writes use atomic batches, and the double-booking guard is a single conditional `INSERT … WHERE NOT EXISTS`. Each query is an HTTPS call, so pages are a little slower than local SQLite; hosting the app on Cloudflare (Workers/Pages with a D1 *binding*) would remove that hop but needs the D1 client swapped for the binding. If your existing D1 already has tables with these names, migrate to a **new** database (or tell me your schema) — `CREATE TABLE IF NOT EXISTS` will not alter an existing table.
+
+## Login & MFA (free)
+
+Password **plus** a 6-digit code from any authenticator app (Google/Microsoft Authenticator, Authy, 1Password…). TOTP per RFC 6238 — no SMS, no cost. First sign-in forces enrolment (QR code), then shows 10 single-use backup codes (stored hashed). Replay-protected, ±30 s clock drift, 5 wrong codes locks the account 15 min and kills its sessions. Owner can reset a teammate's MFA on `/security`; if the *owner* loses phone and codes: `npm run mfa:reset -- owner@email` (needs server/D1 access). Set `MFA_REQUIRED=false` only for local development.
+
 ## Run it
 
 ```bash
@@ -9,11 +25,11 @@ cp .env.example .env     # fill in SESSION_SECRET and DATA_KEY at least (openssl
 npm install
 npm run seed             # demo data + prints the owner login ONCE (must change password on first login)
 npm run dev              # http://localhost:3000
-npm test                 # pricing, coupons, double-booking, refund policy, Aadhaar checksum
+npm test                 # pricing, coupons, concurrent double-booking, refunds, Aadhaar checksum, TOTP (RFC 6238 vectors), backup codes
 ```
 
 Production: `npm run build && npm start` behind HTTPS. `SESSION_SECRET` and `DATA_KEY` are mandatory in production (the app refuses to start without them). Back up `data/homestay.db` **and** keep `DATA_KEY` safe — without it encrypted Aadhaar values cannot be read.
-SQLite suits one property on one server. For serverless hosting (e.g. Vercel) swap `src/lib/db.ts` for a hosted Postgres.
+With D1 configured the app can run on any Node host including Vercel.
 
 ## What's in it
 

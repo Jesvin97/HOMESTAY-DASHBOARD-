@@ -6,8 +6,8 @@ import { inr } from "@/lib/dates";
 
 export default async function Services({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const sp = await searchParams; await requireUser("manager");
-  const providers = db.prepare("SELECT * FROM providers ORDER BY name").all() as { id: number; name: string; category: string; phone: string | null; email: string | null; commission_pct: number; active: number }[];
-  const services = db.prepare("SELECT s.*, p.name pname FROM services s LEFT JOIN providers p ON p.id=s.provider_id ORDER BY s.category,s.name").all() as { id: number; name: string; category: string; price: number; unit: string; included: number; provider_id: number | null; pname: string | null; description: string | null; active: number }[];
+  const providers = await db.prepare("SELECT * FROM providers ORDER BY name").all() as { id: number; name: string; category: string; phone: string | null; email: string | null; commission_pct: number; active: number }[];
+  const services = await db.prepare("SELECT s.*, p.name pname FROM services s LEFT JOIN providers p ON p.id=s.provider_id ORDER BY s.category,s.name").all() as { id: number; name: string; category: string; price: number; unit: string; included: number; provider_id: number | null; pname: string | null; description: string | null; active: number }[];
   return (
     <>
       <PageHeader title="Services & providers" sub="Tours, jeep rides, estate walks, dining — included in tariff or charged extra — and who delivers them." />

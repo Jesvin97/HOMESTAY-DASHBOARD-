@@ -17,12 +17,12 @@ export async function POST(req: Request) {
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return NextResponse.json({ error: "invalid body", issues: p.error.issues }, { status: 400 });
   const d = p.data;
-  const r = createBooking({
+  const r = await createBooking({
     roomId: d.roomId, checkIn: d.checkIn, checkOut: d.checkOut, adults: d.adults, children: d.children, source: "website",
     guest: { name: d.name, phone: d.phone, email: d.email, consentMarketing: d.marketingConsent, consentWhatsapp: d.whatsappConsent },
     couponCode: d.coupon, services: d.services, paid: d.paidOnline, paymentMethod: d.paymentRef ? "online:" + d.paymentRef : undefined, status: "pending",
   });
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: 409 });
-  audit(null, "website_booking", "booking", r.id, { code: r.code });
+  await audit(null, "website_booking", "booking", r.id, { code: r.code });
   return NextResponse.json({ id: r.id, code: r.code, status: "pending" }, { status: 201 });
 }

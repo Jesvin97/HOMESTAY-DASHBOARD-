@@ -10,9 +10,9 @@ type Photo = { id: number; room_id: number | null; url: string; caption: string 
 
 export default async function Rooms({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const sp = await searchParams; await requireUser("manager");
-  const rooms = db.prepare("SELECT * FROM rooms ORDER BY id").all() as Room[];
-  const rates = db.prepare("SELECT * FROM room_rates ORDER BY start_date").all() as Rate[];
-  const photos = db.prepare("SELECT * FROM photos ORDER BY is_hero DESC, sort, id").all() as Photo[];
+  const rooms = await db.prepare("SELECT * FROM rooms ORDER BY id").all() as Room[];
+  const rates = await db.prepare("SELECT * FROM room_rates ORDER BY start_date").all() as Rate[];
+  const photos = await db.prepare("SELECT * FROM photos ORDER BY is_hero DESC, sort, id").all() as Photo[];
   return (
     <>
       <PageHeader title="Rooms, pricing & photos" sub="Edit base prices, add peak/off-season rates, manage the photos shown on the website." />

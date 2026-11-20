@@ -1,16 +1,17 @@
 import { redirect } from "next/navigation";
-import { getUser, login } from "@/lib/auth";
+import { getUser, getPendingUser, login } from "@/lib/auth";
 import { inputCls, btn } from "@/components/ui";
 
 async function doLogin(fd: FormData) {
   "use server";
   const r = await login(String(fd.get("email") || ""), String(fd.get("password") || ""));
   if (r.error) redirect("/login?err=" + encodeURIComponent(r.error));
-  redirect("/");
+  redirect("/mfa");
 }
 
 export default async function Login({ searchParams }: { searchParams: Promise<{ err?: string; timeout?: string }> }) {
   if (await getUser(false)) redirect("/");
+  if (await getPendingUser()) redirect("/mfa");
   const sp = await searchParams;
   return (
     <div className="flex min-h-screen items-center justify-center p-4">

@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { tierFor } from "@/lib/bookings";
+import { loadTiers, tierName } from "@/lib/bookings";
 import { Card, PageHeader, Table, Td, btnGhost, inputCls } from "@/components/ui";
 import { inr } from "@/lib/dates";
 
 export default async function Guests({ searchParams }: { searchParams: Promise<{ q?: string; msg?: string }> }) {
   const sp = await searchParams;
   const l = `%${sp.q || ""}%`;
-  const rows = db.prepare(
+  const tiers = await loadTiers();
+  const rows = await db.prepare(
     `SELECT g.id,g.name,g.phone,g.email,g.aadhaar_last4,g.consent_marketing,g.loyalty_points,
       (SELECT COUNT(*) FROM bookings b WHERE b.guest_id=g.id AND b.status='completed') stays,
       (SELECT COALESCE(SUM(total),0) FROM bookings b WHERE b.guest_id=g.id AND b.status IN ('completed','checked_in','confirmed')) spent
@@ -22,7 +23,7 @@ export default async function Guests({ searchParams }: { searchParams: Promise<{
           {rows.map((g) => (
             <tr key={g.id} className="hover:bg-slate-50">
               <Td><Link className="font-medium text-brand-700 hover:underline" href={`/guests/${g.id}`}>{g.name}</Link></Td><Td>{g.phone}</Td><Td>{g.email}</Td>
-              <Td>{g.aadhaar_last4 ? `•••• •••• ${g.aadhaar_last4}` : "—"}</Td><Td>{g.stays}</Td><Td>{inr(g.spent)}</Td><Td>{tierFor(g.stays)}</Td><Td>{g.loyalty_points}</Td><Td>{g.consent_marketing ? "✓ opted in" : "—"}</Td>
+              <Td>{g.aadhaar_last4 ? `•••• •••• ${g.aadhaar_last4}` : "—"}</Td><Td>{g.stays}</Td><Td>{inr(g.spent)}</Td><Td>{tierName(tiers, g.stays)}</Td><Td>{g.loyalty_points}</Td><Td>{g.consent_marketing ? "✓ opted in" : "—"}</Td>
             </tr>
           ))}
         </Table>

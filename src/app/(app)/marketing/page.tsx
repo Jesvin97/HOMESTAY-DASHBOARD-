@@ -10,9 +10,10 @@ const SEGMENTS = [["all_consented", "All opted-in guests"], ["past_year", "Staye
 
 export default async function Marketing({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const sp = await searchParams; const u = await requireUser();
-  const camps = db.prepare("SELECT * FROM campaigns ORDER BY id DESC").all() as C[];
-  const total = (db.prepare("SELECT COUNT(*) c FROM guests WHERE erased_at IS NULL AND email IS NOT NULL").get() as { c: number }).c;
-  const opted = segmentGuests("all_consented").length;
+  const camps = await db.prepare("SELECT * FROM campaigns ORDER BY id DESC").all() as C[];
+  const total = (await db.prepare("SELECT COUNT(*) c FROM guests WHERE erased_at IS NULL AND email IS NOT NULL").get() as { c: number }).c;
+  const counts = Object.fromEntries(await Promise.all(SEGMENTS.map(async ([v]) => [v, (await segmentGuests(v)).length] as const)));
+  const opted = counts.all_consented;
   return (
     <>
       <PageHeader title="Email marketing" sub={`${opted} of ${total} guests with an email have opted in. Only they can ever be emailed.`} />
@@ -21,7 +22,7 @@ export default async function Marketing({ searchParams }: { searchParams: Promis
         <Card title="New campaign" className="lg:col-span-1">
           <form action={saveCampaignAction} className="space-y-3">
             <Field label="Internal name"><input name="name" required className={inputCls} /></Field>
-            <Field label="Audience"><select name="segment" className={inputCls}>{SEGMENTS.map(([v, l]) => <option key={v} value={v}>{l} ({segmentGuests(v).length})</option>)}</select></Field>
+            <Field label="Audience"><select name="segment" className={inputCls}>{SEGMENTS.map(([v, l]) => <option key={v} value={v}>{l} ({counts[v]})</option>)}</select></Field>
             <Field label="Subject"><input name="subject" required className={inputCls} /></Field>
             <Field label="Message" hint="Use {{name}} for the guest's first name. An unsubscribe link is added automatically."><textarea name="body" rows={8} required className={inputCls} /></Field>
             <button className={btn}>Save draft</button>
@@ -31,10 +32,10 @@ export default async function Marketing({ searchParams }: { searchParams: Promis
           {camps.map((c) => (
             <Card key={c.id} title={c.name} action={<Badge v={c.status} />}>
               <p className="text-sm font-medium">{c.subject}</p><p className="mt-1 whitespace-pre-line text-sm text-slate-600">{c.body}</p>
-              <p className="mt-2 text-xs text-slate-500">Audience: {SEGMENTS.find((s) => s[0] === c.segment)?.[1]} ({segmentGuests(c.segment).length}){c.sent_at && ` · sent ${fmtDate(c.sent_at)} to ${c.sent_count}`}</p>
+              <p className="mt-2 text-xs text-slate-500">Audience: {SEGMENTS.find((s) => s[0] === c.segment)?.[1]} ({counts[c.segment]}){c.sent_at && ` · sent ${fmtDate(c.sent_at)} to ${c.sent_count}`}</p>
               <div className="mt-2 flex gap-2">
                 {c.status === "draft" && (can(u, "manager") ? <form action={approveCampaignAction}><input type="hidden" name="id" value={c.id} /><button className={btnGhost}>Approve</button></form> : <span className="text-xs text-slate-500">Awaiting manager approval</span>)}
-                {c.status === "approved" && can(u, "manager") && <form action={sendCampaignAction}><input type="hidden" name="id" value={c.id} /><button className={btn}>Send to {segmentGuests(c.segment).length} guests</button></form>}
+                {c.status === "approved" && can(u, "manager") && <form action={sendCampaignAction}><input type="hidden" name="id" value={c.id} /><button className={btn}>Send to {counts[c.segment]} guests</button></form>}
               </div>
             </Card>
           ))}

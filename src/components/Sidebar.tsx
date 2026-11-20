@@ -12,7 +12,7 @@ const NAV: { group: string; items: { href: string; label: string }[] }[] = [
   { group: "Property", items: [
     { href: "/rooms", label: "Rooms & pricing" }, { href: "/services", label: "Services & providers" }, { href: "/channels", label: "Channels (OTA)" } ] },
   { group: "Trust & admin", items: [
-    { href: "/privacy", label: "Privacy (DPDP/GDPR)" }, { href: "/security", label: "Security & audit" }, { href: "/settings", label: "Settings" } ] },
+    { href: "/privacy", label: "Privacy (DPDP/GDPR)" }, { href: "/security", label: "Security & audit" }, { href: "/account", label: "My account / MFA" }, { href: "/settings", label: "Settings" } ] },
 ];
 
 export default function Sidebar({ user }: { user: { name: string; role: string } }) {
@@ -32,7 +32,7 @@ export default function Sidebar({ user }: { user: { name: string; role: string }
         ))}
       </nav>
       <div className="border-t border-slate-200 p-3 text-sm">
-        <div className="font-medium text-slate-800">{user.name}</div>
+        <a href="/account" className="font-medium text-slate-800 hover:underline">{user.name}</a>
         <div className="mb-2 text-xs capitalize text-slate-500">{user.role}</div>
         <form action="/api/logout" method="post"><button className="text-xs text-rose-600 hover:underline">Sign out</button></form>
       </div>

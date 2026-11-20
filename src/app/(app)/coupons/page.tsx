@@ -19,7 +19,7 @@ function rules(c: C) {
 
 export default async function Coupons({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const sp = await searchParams; await requireUser("manager");
-  const coupons = db.prepare("SELECT * FROM coupons ORDER BY active DESC, id DESC").all() as C[];
+  const coupons = await db.prepare("SELECT * FROM coupons ORDER BY active DESC, id DESC").all() as C[];
   return (
     <>
       <PageHeader title="Coupon codes" sub="Every rule below is enforced automatically at booking time — owner, staff and website all use the same engine." />

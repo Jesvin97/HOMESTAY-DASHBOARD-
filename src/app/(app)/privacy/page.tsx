@@ -6,11 +6,11 @@ import { fmtDate, today } from "@/lib/dates";
 
 export default async function Privacy({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const sp = await searchParams; const u = await requireUser("manager");
-  const dsr = db.prepare("SELECT d.*, g.name gname FROM dsr_requests d LEFT JOIN guests g ON g.id=d.guest_id ORDER BY (d.status='done'), d.due_date LIMIT 100").all() as { id: number; type: string; status: string; due_date: string; requester: string | null; gname: string | null; notes: string | null }[];
-  const breaches = db.prepare("SELECT * FROM breaches ORDER BY id DESC").all() as { id: number; discovered_at: string; description: string; people_affected: number; authority_notified: number; individuals_notified: number }[];
-  const stats = db.prepare(`SELECT (SELECT COUNT(*) FROM guests WHERE aadhaar_enc IS NOT NULL) aadhaar, (SELECT COUNT(*) FROM guests WHERE consent_marketing=1) mkt, (SELECT COUNT(*) FROM guests WHERE erased_at IS NOT NULL) erased`).get() as { aadhaar: number; mkt: number; erased: number };
+  const dsr = await db.prepare("SELECT d.*, g.name gname FROM dsr_requests d LEFT JOIN guests g ON g.id=d.guest_id ORDER BY (d.status='done'), d.due_date LIMIT 100").all() as { id: number; type: string; status: string; due_date: string; requester: string | null; gname: string | null; notes: string | null }[];
+  const breaches = await db.prepare("SELECT * FROM breaches ORDER BY id DESC").all() as { id: number; discovered_at: string; description: string; people_affected: number; authority_notified: number; individuals_notified: number }[];
+  const stats = await db.prepare(`SELECT (SELECT COUNT(*) FROM guests WHERE aadhaar_enc IS NOT NULL) aadhaar, (SELECT COUNT(*) FROM guests WHERE consent_marketing=1) mkt, (SELECT COUNT(*) FROM guests WHERE erased_at IS NOT NULL) erased`).get() as { aadhaar: number; mkt: number; erased: number };
   const checks = [
-    ["Grievance officer named (DPDP s.8(10) / GDPR contact)", !!getSetting("grievance_officer_email")],
+    ["Grievance officer named (DPDP s.8(10) / GDPR contact)", !!await getSetting("grievance_officer_email")],
     ["Encryption key set (DATA_KEY)", !!process.env.DATA_KEY],
     ["Session secret set", !!process.env.SESSION_SECRET],
     ["HTTPS-only cookies in production", process.env.NODE_ENV === "production"],
@@ -24,7 +24,7 @@ export default async function Privacy({ searchParams }: { searchParams: Promise<
         <Card title="Compliance checklist"><ul className="space-y-1 text-sm">{checks.map(([l, ok]) => <li key={l}>{ok ? "✅" : "⚠️"} {l}</li>)}</ul>
           <p className="mt-3 text-xs text-slate-500">{stats.aadhaar} Aadhaar record(s) held · {stats.mkt} marketing opt-ins · {stats.erased} erasures done</p></Card>
         <Card title="Retention">
-          <p className="text-sm text-slate-600">Aadhaar is deleted {getSetting("aadhaar_retention_days")} days after check-out. Booking/financial records are kept {getSetting("data_retention_years")} years for tax law, then reviewed.</p>
+          <p className="text-sm text-slate-600">Aadhaar is deleted {await getSetting("aadhaar_retention_days")} days after check-out. Booking/financial records are kept {await getSetting("data_retention_years")} years for tax law, then reviewed.</p>
           <form action={runRetentionAction} className="mt-3"><button className={btnGhost}>Run retention clean-up now</button></form>
         </Card>
         <Card title="What we do (for your privacy notice)">
