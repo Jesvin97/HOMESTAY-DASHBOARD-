@@ -227,6 +227,16 @@ test("with automatic refunds off, the cancellation waits for a manager", async (
   assert.equal(await getSetting("auto_refund_online"), "1");
 });
 
+test("a guest linked by email to an older record can still cancel with the phone they gave for this booking", async () => {
+  const h = await hold("heritage-room", 170, 2, { guest: { name: "Asha N", phone: "9555555555", email: "asha@example.com" } }); // same email as an earlier guest, new phone
+  if (!h.ok) throw new Error("hold");
+  await O.attachProviderOrder(h.code, String(++orderSeq));
+  await O.applyOnlinePayment(h.code, { orderId: String(orderSeq), paymentId: "pay_" + orderSeq, amount: h.total });
+  assert.equal((await O.lookupForGuest(h.code, PHONE)).ok, false); // the other number on that guest record is not enough
+  assert.equal((await O.lookupForGuest(h.code, "9555555555")).ok, true);
+  assert.equal((await O.cancelByGuest(h.code, "9555555555")).ok, true);
+});
+
 test("callback requests need consent", async () => {
   assert.equal((await O.createLead({ name: "Ravi", phone: PHONE, consent: false, noticeVersion: "x" })).ok, false);
   assert.equal((await O.createLead({ name: "Ravi", phone: PHONE, consent: true, noticeVersion: "x" })).ok, true);

@@ -119,7 +119,7 @@ export async function createHold(i: HoldInput): Promise<Result<{ code: string; i
   const r = await createBooking({
     roomId: room.id, checkIn: i.checkIn, checkOut: i.checkOut, adults: i.adults, children: i.children, source: "website", plan: i.plan,
     guest: { name: g.name.trim(), phone: g.phone, email }, services, couponCode: i.coupon || undefined,
-    holdMinutes: minutes, consent: { at: new Date().toISOString().slice(0, 19).replace("T", " "), version: i.noticeVersion || "web" }, guestDetails: details,
+    holdMinutes: minutes, contactPhone: g.phone, consent: { at: new Date().toISOString().slice(0, 19).replace("T", " "), version: i.noticeVersion || "web" }, guestDetails: details,
   });
   if (!r.ok) return fail(409, r.error);
   const b = await db.prepare("SELECT total,hold_expires_at FROM bookings WHERE id=?").get<{ total: number; hold_expires_at: string | null }>(r.id);
@@ -212,12 +212,12 @@ async function bookingRow(code: string) {
     `SELECT b.*, r.slug AS room_slug, r.name AS room_name, g.name AS guest_name, g.phone AS guest_phone FROM bookings b
        JOIN rooms r ON r.id=b.room_id JOIN guests g ON g.id=b.guest_id WHERE b.code=?`,
   ).get<{ id: number; code: string; status: string; room_slug: string | null; room_name: string; check_in: string; check_out: string; adults: number; children: number; plan: string; total: number; paid: number;
-    guest_name: string; guest_phone: string | null; created_at: string; provider_order_id: string | null; provider_payment_id: string | null }>(code);
+    guest_name: string; guest_phone: string | null; contact_phone: string | null; created_at: string; provider_order_id: string | null; provider_payment_id: string | null }>(code);
 }
 const toPublic = (b: NonNullable<Awaited<ReturnType<typeof bookingRow>>>): PublicBooking => ({
   code: b.code, status: b.status, confirmed: ["confirmed", "checked_in", "completed"].includes(b.status) && b.paid >= b.total, roomSlug: b.room_slug, roomName: b.room_name,
   checkIn: b.check_in, checkOut: b.check_out, adults: b.adults, children: b.children, plan: b.plan, total: b.total, paid: b.paid,
-  guestFirstName: b.guest_name.trim().split(/\s+/)[0] ?? "", phoneLast4: tenDigits(b.guest_phone).slice(-4), createdAt: b.created_at, provider: { orderId: b.provider_order_id, paymentId: b.provider_payment_id },
+  guestFirstName: b.guest_name.trim().split(/\s+/)[0] ?? "", phoneLast4: tenDigits(b.contact_phone ?? b.guest_phone).slice(-4), createdAt: b.created_at, provider: { orderId: b.provider_order_id, paymentId: b.provider_payment_id },
 });
 
 /** A booking's public summary (first name and last 4 digits of the phone only). */
@@ -231,7 +231,7 @@ export type CancelView = { canCancel: boolean; daysBefore: number; percent: numb
 /** The guest proves it is theirs with the booking code AND the mobile number used. Shows what they would be refunded today. */
 export async function lookupForGuest(code: string, phone: string): Promise<Result<{ booking: PublicBooking; cancel: CancelView }>> {
   const b = await bookingRow(code);
-  if (!b || !MOBILE.test(phone) || tenDigits(b.guest_phone) !== phone) return fail(404, "We couldn't find a booking with that ID and mobile number.");
+  if (!b || !MOBILE.test(phone) || tenDigits(b.contact_phone ?? b.guest_phone) !== phone) return fail(404, "We couldn't find a booking with that ID and mobile number.");
   const pol = await refundFor(b.check_in, b.paid);
   const open = b.status === "pending" || b.status === "confirmed";
   const rf = b.status === "cancelled" ? await db.prepare("SELECT status,amount,percent FROM refunds WHERE booking_id=? ORDER BY id DESC LIMIT 1").get<{ status: string; amount: number; percent: number | null }>(b.id) : undefined;
@@ -246,7 +246,7 @@ export type CancelOutcome = { cancelled: true; refund: number; percent: number; 
 /** Cancels a guest's booking and refunds what the policy allows for TODAY. All numbers come from the dates, never from the website. */
 export async function cancelByGuest(code: string, phone: string): Promise<Result<CancelOutcome>> {
   const b = await bookingRow(code);
-  if (!b || !MOBILE.test(phone) || tenDigits(b.guest_phone) !== phone) return fail(404, "We couldn't find a booking with that ID and mobile number.");
+  if (!b || !MOBILE.test(phone) || tenDigits(b.contact_phone ?? b.guest_phone) !== phone) return fail(404, "We couldn't find a booking with that ID and mobile number.");
 
   const map = (s: string | null): CancelOutcome["refundStatus"] => (s === "paid" ? "paid" : s === "approved" ? "processing" : s === "failed" ? "failed" : s === "proposed" ? "awaiting_approval" : "none");
   if (b.status === "cancelled") {

@@ -13,6 +13,7 @@ ALTER TABLE bookings ADD COLUMN provider_payment_id TEXT;
 ALTER TABLE bookings ADD COLUMN consent_at TEXT;
 ALTER TABLE bookings ADD COLUMN consent_version TEXT;
 ALTER TABLE bookings ADD COLUMN guest_details TEXT;
+ALTER TABLE bookings ADD COLUMN contact_phone TEXT;
 ALTER TABLE refunds ADD COLUMN percent INTEGER;
 ALTER TABLE refunds ADD COLUMN method TEXT;
 CREATE TABLE IF NOT EXISTS api_nonces (nonce TEXT PRIMARY KEY, ts INTEGER NOT NULL);

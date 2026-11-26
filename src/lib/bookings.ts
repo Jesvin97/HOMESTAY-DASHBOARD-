@@ -87,6 +87,8 @@ export type CreateBookingInput = {
   consent?: { at: string; version: string };
   /** Booking-for-someone-else, GST invoice details, special requests (stored as JSON). */
   guestDetails?: unknown;
+  /** The phone number given for this booking (a guest linked by email may already have another number on file). */
+  contactPhone?: string;
 };
 
 export async function createBooking(i: CreateBookingInput): Promise<{ ok: true; id: number; code: string; status: string } | { ok: false; error: string }> {
@@ -114,13 +116,13 @@ export async function createBooking(i: CreateBookingInput): Promise<{ ok: true; 
   // The whole house clashes with every room and every room clashes with the whole house; lapsed unpaid website holds don't count.
   const holdUntil = i.holdMinutes ? new Date(Date.now() + i.holdMinutes * 60_000).toISOString().slice(0, 19).replace("T", " ") : null;
   const ins = await db.prepare(
-    `INSERT INTO bookings(code,guest_id,room_id,check_in,check_out,adults,children,status,source,room_amount,services_amount,discount,loyalty_discount,gst,total,paid,payment_method,coupon_code,notes,commission,created_by,plan,hold_expires_at,consent_at,consent_version,guest_details)
-     SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+    `INSERT INTO bookings(code,guest_id,room_id,check_in,check_out,adults,children,status,source,room_amount,services_amount,discount,loyalty_discount,gst,total,paid,payment_method,coupon_code,notes,commission,created_by,plan,hold_expires_at,consent_at,consent_version,guest_details,contact_phone)
+     SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
      WHERE NOT EXISTS (SELECT 1 FROM bookings WHERE room_id IN ${ROOM_SET} AND ${LIVE_BOOKING} AND check_in<? AND check_out>?)
        AND NOT EXISTS (SELECT 1 FROM room_blocks WHERE room_id IN ${ROOM_SET} AND start_date<? AND end_date>?)`,
   ).run(code, guestId, i.roomId, i.checkIn, i.checkOut, i.adults, i.children, status, i.source, q.roomAmount, q.servicesAmount, q.discount, q.loyaltyDiscount, q.gst, q.total,
     paidNow, i.paymentMethod ?? null, q.couponCode ?? null, i.notes ?? null, commission, i.createdBy ?? null,
-    i.plan ?? "bb", status === "pending" ? holdUntil : null, i.consent?.at ?? null, i.consent?.version ?? null, i.guestDetails ? JSON.stringify(i.guestDetails) : null,
+    i.plan ?? "bb", status === "pending" ? holdUntil : null, i.consent?.at ?? null, i.consent?.version ?? null, i.guestDetails ? JSON.stringify(i.guestDetails) : null, i.contactPhone ?? null,
     i.roomId, i.roomId, i.checkOut, i.checkIn, i.roomId, i.roomId, i.checkOut, i.checkIn);
   if (ins.changes !== 1) return { ok: false, error: "Room is not available for those dates." };
   const id = ins.lastInsertRowid;

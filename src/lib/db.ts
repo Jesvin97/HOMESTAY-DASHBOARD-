@@ -271,6 +271,7 @@ const NEW_COLUMNS: [string, string, string][] = [
   ["bookings", "consent_at", "TEXT"],
   ["bookings", "consent_version", "TEXT"],
   ["bookings", "guest_details", "TEXT"], // booking-for-someone-else, GST details, requests (JSON)
+  ["bookings", "contact_phone", "TEXT"], // the phone number given for THIS booking (proves it is theirs when cancelling)
   ["refunds", "percent", "INTEGER"],
   ["refunds", "method", "TEXT"], // cashfree | upi
 ];
