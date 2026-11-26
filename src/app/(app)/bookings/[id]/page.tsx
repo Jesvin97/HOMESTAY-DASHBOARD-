@@ -6,7 +6,7 @@ import { inr, fmtDate, nightsBetween } from "@/lib/dates";
 import { sendConfirmationAction, recordPaymentAction, bookingStatusAction, cancelBookingAction } from "@/app/actions";
 import { Card, Flash, PageHeader, Badge, btn, btnGhost, btnDanger, inputCls, Field } from "@/components/ui";
 
-type B = { id: number; code: string; guest_id: number; gname: string; phone: string | null; email: string | null; room: string; check_in: string; check_out: string; adults: number; children: number; status: string; source: string; room_amount: number; services_amount: number; discount: number; loyalty_discount: number; gst: number; total: number; paid: number; coupon_code: string | null; notes: string | null; confirmation_status: string; confirmation_sent_at: string | null; cancel_reason: string | null; commission: number };
+type B = { plan?: string | null; provider_payment_id?: string | null; hold_expires_at?: string | null; id: number; code: string; guest_id: number; gname: string; phone: string | null; email: string | null; room: string; check_in: string; check_out: string; adults: number; children: number; status: string; source: string; room_amount: number; services_amount: number; discount: number; loyalty_discount: number; gst: number; total: number; paid: number; coupon_code: string | null; notes: string | null; confirmation_status: string; confirmation_sent_at: string | null; cancel_reason: string | null; commission: number };
 
 export default async function BookingPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ msg?: string; err?: string }> }) {
   const { id } = await params; const sp = await searchParams;
@@ -26,7 +26,9 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
         <Card title="Guest">
           <Link href={`/guests/${b.guest_id}`} className="font-medium text-brand-700 hover:underline">{b.gname}</Link>
           <div className="text-sm text-slate-600">{b.phone || "no phone"}<br />{b.email || "no email"}</div>
-          <div className="mt-2 text-sm">{b.adults} adults, {b.children} children · via <span className="capitalize">{b.source.replace("_", ".")}</span></div>
+          <div className="mt-2 text-sm">{b.adults} adults, {b.children} children · via <span className="capitalize">{b.source.replace("_", ".")}</span>{b.plan === "meals" ? " · all meals" : b.plan === "bb" ? " · bed & breakfast" : ""}</div>
+          {b.provider_payment_id && <div className="mt-1 text-xs text-slate-500">Paid online (Cashfree) · payment {b.provider_payment_id}</div>}
+          {b.status === "pending" && b.hold_expires_at && <div className="mt-1 text-xs text-amber-700">Dates held until {b.hold_expires_at} UTC; released if the payment does not arrive.</div>}
           {b.notes && <p className="mt-2 text-sm text-slate-600">Note: {b.notes}</p>}
         </Card>
         <Card title="Money">

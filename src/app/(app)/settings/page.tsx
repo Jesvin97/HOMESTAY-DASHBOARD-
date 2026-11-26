@@ -8,7 +8,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const s = await allSettings();
   const pol = (JSON.parse(s.cancellation_policy) as { daysBefore: number; refundPct: number }[]).sort((a, b) => b.daysBefore - a.daysBefore);
   const rows = [0, 1, 2, 3].map((i) => pol[i] ?? { daysBefore: "", refundPct: "" });
-  const env = [["SMTP_URL", "Sending email"], ["IMAP_HOST", "Reading complaints from mailbox"], ["RAZORPAYX_KEY_ID", "Live UPI refunds"], ["WEBSITE_API_KEY", "Website → dashboard bookings"], ["DATA_KEY", "Aadhaar encryption"], ["SESSION_SECRET", "Secure sessions"]];
+  const env = [["SMTP_URL", "Sending email"], ["IMAP_HOST", "Reading complaints from mailbox"], ["RAZORPAYX_KEY_ID", "Live UPI refunds (non-website bookings)"], ["CASHFREE_APP_ID", "Refunds of website payments (Cashfree)"], ["WEBSITE_API_SECRET", "Website → dashboard signed connection"], ["DATA_KEY", "Aadhaar encryption"], ["SESSION_SECRET", "Secure sessions"]];
   return (
     <>
       <PageHeader title="Settings" />
@@ -31,6 +31,9 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         </Card>
         <Card title="Booking holds">
           <Field label="Hold an unpaid booking for (hours)" hint="A booking is confirmed only when the FULL amount is received. Bookings with no payment at all are released after this long; part-paid ones are kept for you to decide."><input name="payment_hold_hours" type="number" min={1} max={168} defaultValue={s.payment_hold_hours} className={inputCls} /></Field>
+          <Field label="Website: hold the dates while the guest pays (minutes)" hint="When a guest starts paying on the website the dates are held for this long, then released if no payment arrives."><input name="web_hold_minutes" type="number" min={5} max={120} defaultValue={s.web_hold_minutes} className={inputCls} /></Field>
+          <Field label="Extra adult per night ₹" hint="Charged per adult above a room's base occupancy (set per room under Rooms &amp; pricing)."><input name="extra_adult_per_night" type="number" min={0} max={100000} defaultValue={s.extra_adult_per_night} className={inputCls} /></Field>
+          <label className="flex items-start gap-2 text-sm"><input type="hidden" name="auto_refund_present" value="1" /><input type="checkbox" name="auto_refund_online" defaultChecked={s.auto_refund_online === "1"} className="mt-1" /><span><b>Refund guests automatically when they cancel on the website.</b> The amount comes from the cancellation policy below and goes back through Cashfree to their original payment method. Turn off to approve each refund yourself.</span></label>
         </Card>
         <Card title="Privacy officer & retention">
           <div className="space-y-3"><Field label="Grievance officer name"><input name="grievance_officer_name" defaultValue={s.grievance_officer_name} className={inputCls} /></Field>

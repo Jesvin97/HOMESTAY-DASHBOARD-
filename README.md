@@ -1,6 +1,6 @@
 # Homestay Desk — owner dashboard
 
-**Docs:** [DATA_NEEDED.md](DATA_NEEDED.md) (what each section needs from you) · [DEPLOY.md](DEPLOY.md) (Cloudflare) · [AUDIT.md](AUDIT.md) (logic audit) · [QUESTIONS.md](QUESTIONS.md) (open questions)
+**Docs:** [INTEGRATION.md](INTEGRATION.md) (website ↔ dashboard signed API) · [DATA_NEEDED.md](DATA_NEEDED.md) (what each section needs from you) · [DEPLOY.md](DEPLOY.md) (Cloudflare) · [AUDIT.md](AUDIT.md) (logic audit) · [QUESTIONS.md](QUESTIONS.md) (open questions)
 
 > **Booking rule:** a booking is *confirmed only when the full amount is received*; until then it is *pending* and holds the room for a limited time.
 

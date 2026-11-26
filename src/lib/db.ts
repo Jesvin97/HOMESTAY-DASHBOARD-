@@ -245,6 +245,39 @@ CREATE TABLE IF NOT EXISTS channels (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, commission_pct REAL NOT NULL DEFAULT 0,
   room_id INTEGER REFERENCES rooms(id), ical_url TEXT, last_sync TEXT, last_result TEXT
 );
+-- Website integration: one-time request ids (replay protection) and callback requests from the website.
+CREATE TABLE IF NOT EXISTS api_nonces (nonce TEXT PRIMARY KEY, ts INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS leads (
+  id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'callback', name TEXT, phone TEXT, note TEXT,
+  consent_at TEXT, consent_version TEXT, status TEXT NOT NULL DEFAULT 'new', -- new | done
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`;
+
+/**
+ * Columns added after the first release (website integration). Added with ALTER so existing databases
+ * (local file or Cloudflare D1) upgrade in place; running it again does nothing.
+ */
+const NEW_COLUMNS: [string, string, string][] = [
+  ["rooms", "slug", "TEXT"], // the website's room id, e.g. heritage-room
+  ["rooms", "blocks_all", "INTEGER NOT NULL DEFAULT 0"], // 1 = the whole house: clashes with every room
+  ["rooms", "meals_extra", "INTEGER NOT NULL DEFAULT 0"], // extra rupees per night for the all-meals plan
+  ["rooms", "base_occupancy", "INTEGER NOT NULL DEFAULT 2"], // guests included in the rate; extra adults are charged
+  ["services", "code", "TEXT"], // the website's add-on id, e.g. pickup
+  ["bookings", "plan", "TEXT NOT NULL DEFAULT 'bb'"], // bb = bed and breakfast, meals = all meals
+  ["bookings", "hold_expires_at", "TEXT"], // unpaid website holds lapse at this time (UTC)
+  ["bookings", "provider_order_id", "TEXT"], // Cashfree order
+  ["bookings", "provider_payment_id", "TEXT"], // Cashfree payment
+  ["bookings", "consent_at", "TEXT"],
+  ["bookings", "consent_version", "TEXT"],
+  ["bookings", "guest_details", "TEXT"], // booking-for-someone-else, GST details, requests (JSON)
+  ["refunds", "percent", "INTEGER"],
+  ["refunds", "method", "TEXT"], // cashfree | upi
+];
+const POST_SCHEMA = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rooms_slug ON rooms(slug) WHERE slug IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_services_code ON services(code) WHERE code IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_order ON bookings(provider_order_id) WHERE provider_order_id IS NOT NULL;
 `;
 
 const DEFAULT_SETTINGS: Record<string, string> = {
@@ -252,14 +285,18 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   property_phone: "",
   property_email: "",
   gst_number: "",
-  gst_mode: "slab", // slab | flat | none
+  gst_mode: "slab", // slab | flat | none (CONFIRM THE RATE WITH THE ACCOUNTANT)
   gst_flat_pct: "12",
   services_gst_pct: "18",
+  // Refund = this % of what the guest paid, by days before check-in: 16+ days 75% (25% kept), 3-15 days 50%, last 3 days nothing.
   cancellation_policy: JSON.stringify([
-    { daysBefore: 7, refundPct: 100 },
+    { daysBefore: 16, refundPct: 75 },
     { daysBefore: 3, refundPct: 50 },
     { daysBefore: 0, refundPct: 0 },
   ]),
+  web_hold_minutes: "25", // how long a website booking holds the dates while the guest pays
+  extra_adult_per_night: "1200", // per adult above the room's base occupancy
+  auto_refund_online: "1", // 1 = a guest's online cancellation is refunded at once per the policy; 0 = wait for a manager's approval
   loyalty_points_per_100: "5",
   loyalty_point_value: "1", // rupees per point on redemption
   loyalty_tiers: JSON.stringify([
@@ -285,6 +322,11 @@ const be: Backend = g.__be ?? (g.__be = usingD1 ? d1Backend() : sqliteBackend())
 /** Create tables + default settings. Local SQLite: automatic on first use. D1: run `npm run db:migrate` (never at request time). */
 export async function migrate() {
   await be.exec(SCHEMA);
+  for (const [table, column, ddl] of NEW_COLUMNS) {
+    const have = await be.all(`PRAGMA table_info(${table})`, []);
+    if (!have.some((r) => r.name === column)) await be.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`, []);
+  }
+  await be.exec(POST_SCHEMA);
   await be.batch(Object.entries(DEFAULT_SETTINGS).map(([k, v]) => st("INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)", k, v)));
 }
 if (!g.__ready) g.__ready = usingD1 ? Promise.resolve() : migrate();

@@ -7,6 +7,7 @@ import { createBooking, cancelBooking, completeBooking, addPoints, setConsent, s
 import { segmentGuests } from "@/lib/marketing";
 import { sendBookingConfirmation, sendCancellationEmail, sendMail, syncInbox, unsubLink } from "@/lib/mail";
 import { payoutUpi, UPI_RE } from "@/lib/upi";
+import { executeCashfreeRefund } from "@/lib/refunds";
 import { eraseGuest, runRetention, dsrDueDate } from "@/lib/privacy";
 import { syncChannel } from "@/lib/ical";
 import { decrypt } from "@/lib/crypto";
@@ -101,13 +102,20 @@ export async function setRefundUpiAction(fd: FormData) {
 export async function approveRefundAction(fd: FormData) {
   const u = await requireUser("manager");
   const id = n(fd, "id");
-  const r = await db.prepare("SELECT r.*, g.name gname FROM refunds r JOIN bookings b ON b.id=r.booking_id JOIN guests g ON g.id=b.guest_id WHERE r.id=?").get(id) as
-    { id: number; amount: number; upi_id: string | null; status: string; proposed_by: number | null; gname: string; booking_id: number } | undefined;
+  const r = await db.prepare("SELECT r.*, g.name gname, b.provider_payment_id online FROM refunds r JOIN bookings b ON b.id=r.booking_id JOIN guests g ON g.id=b.guest_id WHERE r.id=?").get(id) as
+    { id: number; amount: number; upi_id: string | null; status: string; proposed_by: number | null; gname: string; booking_id: number; online: string | null } | undefined;
   if (!r || !["proposed", "failed"].includes(r.status)) done("/refunds", undefined, "Refund isn't awaiting approval.");
   if (r!.proposed_by === u.id && u.role !== "owner") done("/refunds", undefined, "Four-eyes rule: someone else must approve a refund you proposed (the owner may approve their own).");
-  if (!r!.upi_id) done("/refunds", undefined, "Add the guest's UPI ID first.");
+  const viaCashfree = !!r!.online; // paid online on the website: goes back to the original payment method, no UPI id needed
+  if (!viaCashfree && !r!.upi_id) done("/refunds", undefined, "Add the guest's UPI ID first.");
   if (s(fd, "confirm") !== String(r!.amount)) done("/refunds", undefined, "Type the exact refund amount to confirm.");
   await db.prepare("UPDATE refunds SET status='approved', approved_by=?, decided_at=datetime('now') WHERE id=?").run(u.id, id);
+  if (viaCashfree) {
+    const cf = await executeCashfreeRefund(id);
+    await audit(u, cf.status === "failed" ? "refund_failed" : "refund_sent", "refund", id, { amount: r!.amount, status: cf.status, simulated: !!cf.simulated });
+    if (cf.status === "failed") done("/refunds", undefined, "Cashfree refund failed: " + cf.error);
+    done("/refunds", cf.simulated ? "Approved (SIMULATED: Cashfree is not configured, so no money moved)." : cf.status === "paid" ? "Approved and refunded through Cashfree." : "Approved. Cashfree is processing it; use Check status later.");
+  }
   const res = await payoutUpi({ upiId: r!.upi_id!, amount: r!.amount, name: r!.gname, reference: "refund-" + id });
   if (res.ok) {
     await db.prepare("UPDATE refunds SET status='paid', provider_ref=?, failure_reason=NULL WHERE id=?").run((res.simulated ? "[SIMULATED] " : "") + res.ref, id);
@@ -117,6 +125,21 @@ export async function approveRefundAction(fd: FormData) {
   await db.prepare("UPDATE refunds SET status='failed', failure_reason=? WHERE id=?").run(res.error, id);
   await audit(u, "refund_failed", "refund", id, res.error);
   done("/refunds", undefined, "Payout failed: " + res.error);
+}
+/** Retry a failed Cashfree refund, or refresh one that is still processing. Safe to repeat: Cashfree never refunds twice. */
+export async function retryRefundAction(fd: FormData) {
+  const u = await requireUser("manager");
+  const id = n(fd, "id");
+  const cf = await executeCashfreeRefund(id);
+  await audit(u, "refund_checked", "refund", id, { status: cf.status });
+  if (cf.status === "failed") done("/refunds", undefined, "Cashfree refund failed: " + cf.error);
+  done("/refunds", cf.status === "paid" ? "Refund completed through Cashfree." : "Cashfree is still processing this refund.");
+}
+export async function doneLeadAction(fd: FormData) {
+  const u = await requireUser();
+  await db.prepare("UPDATE leads SET status='done' WHERE id=?").run(n(fd, "id"));
+  await audit(u, "lead_done", "lead", n(fd, "id"));
+  done("/inbox", "Marked as called.");
 }
 export async function rejectRefundAction(fd: FormData) {
   const u = await requireUser("manager");
@@ -133,6 +156,7 @@ export async function saveRoomAction(fd: FormData) {
   if (price <= 0) done("/rooms", undefined, "Price must be positive.");
   if (id) {
     const old = await db.prepare("SELECT base_price FROM rooms WHERE id=?").get(id) as { base_price: number };
+    await db.prepare("UPDATE rooms SET meals_extra=?,base_occupancy=? WHERE id=?").run(Math.max(0, n(fd, "meals_extra", 0)), Math.max(1, n(fd, "base_occupancy", 2)), id);
     await db.prepare("UPDATE rooms SET name=?,type=?,capacity=?,base_price=?,description=?,active=? WHERE id=?").run(s(fd, "name"), s(fd, "type"), n(fd, "capacity", 2), price, s(fd, "description"), b(fd, "active") ? 1 : 0, id);
     await audit(u, "room_updated", "room", id, { price_from: old.base_price, price_to: price });
   } else {
@@ -418,9 +442,10 @@ export async function saveSettingsAction(fd: FormData) {
   const text = ["property_name", "property_phone", "property_email", "gst_number", "grievance_officer_name", "grievance_officer_email"];
   for (const k of text) if (fd.has(k)) await setSetting(k, s(fd, k).slice(0, 200));
   if (fd.has("gst_mode")) { const m = s(fd, "gst_mode"); if (["slab", "flat", "none"].includes(m)) await setSetting("gst_mode", m); else bad.push("GST method"); }
-  for (const [k, lo, hi, label] of [["gst_flat_pct", 0, 28, "Flat GST %"], ["services_gst_pct", 0, 28, "GST % on services"], ["aadhaar_retention_days", 0, 365, "Aadhaar retention days"], ["data_retention_years", 1, 20, "Financial retention years"], ["payment_hold_hours", 1, 168, "Payment hold hours"]] as const) {
+  for (const [k, lo, hi, label] of [["web_hold_minutes", 5, 120, "Website hold minutes"], ["extra_adult_per_night", 0, 100000, "Extra adult per night"], ["gst_flat_pct", 0, 28, "Flat GST %"], ["services_gst_pct", 0, 28, "GST % on services"], ["aadhaar_retention_days", 0, 365, "Aadhaar retention days"], ["data_retention_years", 1, 20, "Financial retention years"], ["payment_hold_hours", 1, 168, "Payment hold hours"]] as const) {
     if (!fd.has(k)) continue; const v = num(k, lo, hi); if (v === null) bad.push(`${label} (${lo}–${hi})`); else await setSetting(k, v);
   }
+  if (fd.has("auto_refund_present")) await setSetting("auto_refund_online", fd.has("auto_refund_online") ? "1" : "0");
   const tiers = [0, 1, 2, 3].map((i) => ({ daysBefore: n(fd, `p${i}d`, -1), refundPct: n(fd, `p${i}r`, -1) })).filter((t) => t.daysBefore >= 0 || t.refundPct >= 0);
   if (tiers.some((t) => t.daysBefore < 0 || t.refundPct < 0 || t.refundPct > 100)) bad.push("Cancellation policy (days ≥ 0, refund 0–100%)");
   else if (tiers.length) await setSetting("cancellation_policy", JSON.stringify(tiers));

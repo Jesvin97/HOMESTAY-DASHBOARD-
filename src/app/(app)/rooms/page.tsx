@@ -4,7 +4,7 @@ import { saveRoomAction, addRateAction, deleteRateAction, addPhotoAction, editPh
 import { Card, Field, Flash, PageHeader, btn, btnGhost, inputCls } from "@/components/ui";
 import { inr, fmtDate } from "@/lib/dates";
 
-type Room = { id: number; name: string; type: string; capacity: number; base_price: number; description: string | null; active: number };
+type Room = { id: number; name: string; type: string; capacity: number; base_price: number; description: string | null; active: number; slug: string | null; meals_extra: number; base_occupancy: number; blocks_all: number };
 type Rate = { id: number; room_id: number; label: string; start_date: string; end_date: string; price: number; priority: number };
 type Photo = { id: number; room_id: number | null; url: string; caption: string | null; is_hero: number; sort: number };
 
@@ -24,7 +24,10 @@ export default async function Rooms({ searchParams }: { searchParams: Promise<{ 
               <Field label="Name"><input name="name" defaultValue={r.name} className={inputCls} /></Field>
               <Field label="Type"><input name="type" defaultValue={r.type} className={inputCls} /></Field>
               <Field label="Sleeps"><input name="capacity" type="number" min={1} defaultValue={r.capacity} className={inputCls} /></Field>
-              <Field label="Base price / night ₹" hint="Price changes are written to the audit log."><input name="base_price" type="number" min={1} defaultValue={r.base_price} className={inputCls} /></Field>
+              <Field label="Base price / night ₹" hint="Bed &amp; breakfast. Price changes are written to the audit log."><input name="base_price" type="number" min={1} defaultValue={r.base_price} className={inputCls} /></Field>
+              <Field label="All-meals extra / night ₹" hint="Added per night when the guest chooses the all-meals plan on the website."><input name="meals_extra" type="number" min={0} defaultValue={r.meals_extra} className={inputCls} /></Field>
+              <Field label="Guests included in the price" hint="Adults above this are charged the extra-adult rate (Settings)."><input name="base_occupancy" type="number" min={1} defaultValue={r.base_occupancy} className={inputCls} /></Field>
+              {r.slug && <p className="text-xs text-slate-500 sm:col-span-2">Website id: <code>{r.slug}</code>{r.blocks_all ? " · the whole house: booking it blocks every room, and any room booking blocks it" : ""}</p>}
               <div className="sm:col-span-2"><Field label="Description"><textarea name="description" defaultValue={r.description ?? ""} rows={2} className={inputCls} /></Field></div>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={!!r.active} /> Bookable</label>
               <button className={btn}>Save room</button>

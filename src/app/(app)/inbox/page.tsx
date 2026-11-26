@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { addComplaintAction, updateComplaintAction, syncInboxAction } from "@/app/actions";
+import { addComplaintAction, updateComplaintAction, syncInboxAction, doneLeadAction } from "@/app/actions";
 import { Card, Field, Flash, PageHeader, Table, Td, Badge, btn, btnGhost, inputCls } from "@/components/ui";
 import { fmtDate } from "@/lib/dates";
 
@@ -7,6 +7,7 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
   const sp = await searchParams;
   const complaints = await db.prepare(`SELECT c.*, g.name gname FROM complaints c LEFT JOIN guests g ON g.id=c.guest_id ORDER BY (c.status='resolved'), c.id DESC LIMIT 100`).all() as { id: number; subject: string; body: string | null; severity: string; status: string; source: string; gname: string | null; created_at: string; resolution: string | null }[];
   const mails = await db.prepare("SELECT direction,kind,to_addr,from_addr,subject,status,error,created_at FROM emails ORDER BY id DESC LIMIT 40").all() as { direction: string; kind: string; to_addr: string | null; from_addr: string | null; subject: string; status: string; error: string | null; created_at: string }[];
+  const leads = await db.prepare("SELECT id,name,phone,note,status,created_at FROM leads ORDER BY (status='done'), id DESC LIMIT 50").all() as { id: number; name: string; phone: string; note: string | null; status: string; created_at: string }[];
   const guests = await db.prepare("SELECT id,name FROM guests WHERE erased_at IS NULL ORDER BY name LIMIT 500").all() as { id: number; name: string }[];
   return (
     <>
@@ -21,6 +22,14 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
                 <Td><form action={updateComplaintAction} className="flex flex-col gap-1"><input type="hidden" name="id" value={c.id} />
                   <select name="status" defaultValue={c.status} className={inputCls}><option value="open">open</option><option value="in_progress">in progress</option><option value="resolved">resolved</option></select>
                   <input name="resolution" defaultValue={c.resolution ?? ""} placeholder="What was done?" className={inputCls} /><button className={btnGhost}>Update</button></form></Td></tr>
+            ))}
+          </Table>
+        </Card>
+        <Card title="Callback requests from the website" className="lg:col-span-3">
+          <Table head={["When", "Name", "Phone", "Best time", "Status", ""]} empty={leads.length ? undefined : "No callback requests yet."}>
+            {leads.map((l) => (
+              <tr key={l.id}><Td className="whitespace-nowrap">{fmtDate(l.created_at)}</Td><Td>{l.name}</Td><Td><a className="text-brand-700 hover:underline" href={`tel:${l.phone}`}>{l.phone}</a></Td><Td>{l.note ?? "—"}</Td><Td><Badge v={l.status} /></Td>
+                <Td>{l.status !== "done" && <form action={doneLeadAction}><input type="hidden" name="id" value={l.id} /><button className={btnGhost}>Mark called</button></form>}</Td></tr>
             ))}
           </Table>
         </Card>

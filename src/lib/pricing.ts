@@ -12,10 +12,11 @@ type RateRow = { start_date: string; end_date: string; price: number };
 /** One round-trip pair per quote (not per night) — matters on D1 where each query is an HTTP call. */
 async function rateTable(roomId: number) {
   const [room, rates] = await Promise.all([
-    db.prepare("SELECT base_price FROM rooms WHERE id=?").get<{ base_price: number }>(roomId),
+    db.prepare("SELECT base_price,meals_extra,base_occupancy FROM rooms WHERE id=?").get<{ base_price: number; meals_extra: number; base_occupancy: number }>(roomId),
     db.prepare("SELECT start_date,end_date,price FROM room_rates WHERE room_id=? ORDER BY priority DESC, id DESC").all<RateRow>(roomId),
   ]);
-  return (date: string) => rates.find((r) => r.start_date <= date && r.end_date >= date)?.price ?? room!.base_price;
+  const rateOn = (date: string) => rates.find((r) => r.start_date <= date && r.end_date >= date)?.price ?? room!.base_price;
+  return Object.assign(rateOn, { room: room! });
 }
 export async function nightlyRate(roomId: number, date: string): Promise<number> { return (await rateTable(roomId))(date); }
 
@@ -26,12 +27,20 @@ export async function gstPctForRate(rate: number): Promise<number> {
   return gstPct(rate, { mode: await getSetting("gst_mode"), flat: Number(await getSetting("gst_flat_pct")) || 0 });
 }
 
+/**
+ * The rooms a booking for `roomId` clashes with: the room itself, the whole house (if it is a different room),
+ * and, when `roomId` IS the whole house, every room. Used by every availability check and by the atomic insert.
+ */
+export const ROOM_SET = "(SELECT id FROM rooms WHERE id=? OR blocks_all=1 OR (SELECT blocks_all FROM rooms WHERE id=?)=1)";
+/** A booking blocks dates unless it is cancelled/no-show, or an unpaid website hold that has lapsed. */
+export const LIVE_BOOKING = "status NOT IN ('cancelled','no_show') AND (status!='pending' OR hold_expires_at IS NULL OR hold_expires_at>datetime('now'))";
+
 export async function isRoomFree(roomId: number, checkIn: string, checkOut: string, ignoreBookingId?: number): Promise<boolean> {
   const b = await db.prepare(
-    `SELECT 1 FROM bookings WHERE room_id=? AND status NOT IN ('cancelled','no_show') AND check_in<? AND check_out>? AND id IS NOT ? LIMIT 1`,
-  ).get(roomId, checkOut, checkIn, ignoreBookingId ?? null);
+    `SELECT 1 FROM bookings WHERE room_id IN ${ROOM_SET} AND ${LIVE_BOOKING} AND check_in<? AND check_out>? AND id IS NOT ? LIMIT 1`,
+  ).get(roomId, roomId, checkOut, checkIn, ignoreBookingId ?? null);
   if (b) return false;
-  const k = await db.prepare("SELECT 1 FROM room_blocks WHERE room_id=? AND start_date<? AND end_date>? LIMIT 1").get(roomId, checkOut, checkIn);
+  const k = await db.prepare(`SELECT 1 FROM room_blocks WHERE room_id IN ${ROOM_SET} AND start_date<? AND end_date>? LIMIT 1`).get(roomId, roomId, checkOut, checkIn);
   return !k;
 }
 
@@ -82,9 +91,16 @@ export type Quote = {
 export async function quote(a: {
   roomId: number; checkIn: string; checkOut: string; services?: { id: number; qty: number }[];
   couponCode?: string | null; guestId?: number | null; redeemPoints?: number;
+  /** "meals" adds the room's all-meals supplement per night. Default "bb" (bed and breakfast). */
+  plan?: "bb" | "meals";
+  /** Adults above the room's base occupancy are charged per night. */
+  adults?: number;
 }): Promise<Quote> {
   const rateOn = await rateTable(a.roomId);
-  const perNight = eachNight(a.checkIn, a.checkOut).map((date) => ({ date, rate: rateOn(date) }));
+  const mealsExtra = a.plan === "meals" ? rateOn.room.meals_extra || 0 : 0;
+  const extraAdults = a.adults ? Math.max(0, a.adults - (rateOn.room.base_occupancy || a.adults)) : 0;
+  const extraAdultPerNight = extraAdults * (Number(await getSetting("extra_adult_per_night")) || 0);
+  const perNight = eachNight(a.checkIn, a.checkOut).map((date) => ({ date, rate: rateOn(date) + mealsExtra + extraAdultPerNight }));
   const roomAmount = perNight.reduce((s, n) => s + n.rate, 0);
   let servicesAmount = 0;
   for (const s of a.services || []) {

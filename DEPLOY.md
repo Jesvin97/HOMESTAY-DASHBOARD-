@@ -17,7 +17,7 @@ npx wrangler login                       # opens a browser; or export CLOUDFLARE
 3. **Secrets** (each prompts for the value; never commit them):
    ```bash
    for n in SESSION_SECRET DATA_KEY CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_D1_DATABASE_ID CLOUDFLARE_API_TOKEN \
-            WEBSITE_API_KEY ICAL_TOKEN CRON_SECRET INBOUND_EMAIL_SECRET APP_URL RESEND_API_KEY MAIL_FROM; do
+            WEBSITE_API_SECRET CASHFREE_APP_ID CASHFREE_SECRET_KEY CASHFREE_ENV ICAL_TOKEN CRON_SECRET INBOUND_EMAIL_SECRET APP_URL RESEND_API_KEY MAIL_FROM; do
      npx wrangler secret put $n; done
    ```
    `SESSION_SECRET`, `DATA_KEY`: `openssl rand -hex 32`. **Back up `DATA_KEY`** — without it stored Aadhaar numbers are unreadable.

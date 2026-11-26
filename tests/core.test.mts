@@ -38,7 +38,7 @@ test("two simultaneous requests for the same room: exactly one wins", async () =
 test("cancellation proposes (never pays) a policy refund and frees the room", async () => {
   const { id } = (await db.prepare("SELECT id FROM bookings LIMIT 1").get()) as { id: number };
   const r = await cancelBooking(id, "test", 1);
-  assert.equal(r.refund, 6720);
+  assert.equal(r.refund, 5040); // 20 days before check-in: 75% of 6720 (default policy: 16+ days 75%, 3-15 days 50%, last 3 days nothing)
   const rf = (await db.prepare("SELECT status,amount FROM refunds").get()) as { status: string; amount: number };
   assert.equal(rf.status, "proposed");
   assert.equal(await isRoomFree(1, ci, co), true);
@@ -47,6 +47,10 @@ test("cancellation proposes (never pays) a policy refund and frees the room", as
 test("refund tiers", async () => {
   assert.equal((await refundFor(addDays(today(), 4), 1000)).pct, 50);
   assert.equal((await refundFor(addDays(today(), 1), 1000)).amount, 0);
+});
+test("default refund policy: 25% kept at 16+ days, 50% at 3-15, everything in the last 3 days", async () => {
+  const pct = async (d: number) => (await refundFor(addDays(today(), d), 1000)).pct;
+  assert.deepEqual([await pct(40), await pct(16), await pct(15), await pct(3), await pct(2), await pct(0)], [75, 75, 50, 50, 0, 0]);
 });
 function withCheckDigit(b: string) { // Verhoeff
   const d = [[0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],[2,3,4,0,1,7,8,9,5,6],[3,4,0,1,2,8,9,5,6,7],[4,0,1,2,3,9,5,6,7,8],[5,9,8,7,6,0,4,3,2,1],[6,5,9,8,7,1,0,4,3,2],[7,6,5,9,8,2,1,0,4,3],[8,7,6,5,9,3,2,1,0,4],[9,8,7,6,5,4,3,2,1,0]];

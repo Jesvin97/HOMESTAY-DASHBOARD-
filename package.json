@@ -14,7 +14,8 @@
     "cf:build": "opennextjs-cloudflare build",
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "e2e": "node tests/e2e.cjs"
+    "e2e": "node tests/e2e.cjs",
+    "seed:catalog": "tsx scripts/seed-catalog.ts"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "^1.20.18",
