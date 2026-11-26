@@ -1,7 +1,7 @@
 /**
  * Database access. Two interchangeable backends behind ONE async API:
  *   - Cloudflare D1 over its REST API   (when CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_D1_DATABASE_ID + CLOUDFLARE_API_TOKEN are set)
- *   - local SQLite file via better-sqlite3 (development / tests / seeding)
+ *   - local SQLite file via better-sqlite3 or Node's built-in node:sqlite (development / tests / seeding)
  * D1 has no interactive transactions, so multi-statement atomic work uses db.batch([...]) (atomic on both backends).
  */
 import fs from "fs";
@@ -51,19 +51,63 @@ function d1Backend(): Backend {
 }
 
 /* ---------------- local SQLite ---------------- */
+type Raw = {
+  all(sql: string, p: P[]): Record<string, unknown>[];
+  run(sql: string, p: P[]): RunResult;
+  exec(sql: string): void;
+  tx<T>(fn: () => T): T;
+};
+
+/**
+ * Opens the local SQLite file with whichever driver works:
+ *   1. better-sqlite3 (a native add-on: on Windows with a brand-new Node it may have no ready-made build and
+ *      would need Visual Studio's C++ tools, so it is an *optional* dependency)
+ *   2. Node's built-in SQLite (node:sqlite, Node 22.5+ including 24) - nothing to compile.
+ * Set SQLITE_DRIVER=node or SQLITE_DRIVER=better-sqlite3 to force one.
+ */
+function openRaw(file: string): Raw {
+  const forced = process.env.SQLITE_DRIVER;
+  if (forced !== "node") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const Database = require("better-sqlite3") as typeof import("better-sqlite3");
+      const raw = new Database(file);
+      raw.pragma("journal_mode = WAL");
+      raw.pragma("foreign_keys = ON");
+      return {
+        all: (sql, p) => raw.prepare(sql).all(...norm(p)) as Record<string, unknown>[],
+        run: (sql, p) => { const r = raw.prepare(sql).run(...norm(p)); return { changes: r.changes, lastInsertRowid: Number(r.lastInsertRowid) }; },
+        exec: (sql) => { raw.exec(sql); },
+        tx: (fn) => raw.transaction(fn)(),
+      };
+    } catch (e) {
+      if (forced === "better-sqlite3") throw e;
+    }
+  }
+  // getBuiltinModule keeps the bundler from trying to resolve the node: scheme at build time.
+  const mod = (process as unknown as { getBuiltinModule?: (id: string) => typeof import("node:sqlite") | undefined }).getBuiltinModule?.("node:sqlite");
+  if (!mod) throw new Error("No local SQLite driver: use Node 22.5 or newer (built-in SQLite), or install better-sqlite3.");
+  const raw = new mod.DatabaseSync(file);
+  raw.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+  return {
+    all: (sql, p) => (raw.prepare(sql).all(...norm(p)) as Record<string, unknown>[]).map((r) => ({ ...r })),
+    run: (sql, p) => { const r = raw.prepare(sql).run(...norm(p)); return { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) }; },
+    exec: (sql) => { raw.exec(sql); },
+    tx: (fn) => {
+      raw.exec("BEGIN");
+      try { const r = fn(); raw.exec("COMMIT"); return r; } catch (e) { raw.exec("ROLLBACK"); throw e; }
+    },
+  };
+}
+
 function sqliteBackend(): Backend {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3") as typeof import("better-sqlite3");
   const file = process.env.DATABASE_FILE || path.join(process.cwd(), "data", "homestay.db");
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
-  const raw = new Database(file);
-  raw.pragma("journal_mode = WAL");
-  raw.pragma("foreign_keys = ON");
-  const runSync = (sql: string, p: P[]): RunResult => { const r = raw.prepare(sql).run(...norm(p)); return { changes: r.changes, lastInsertRowid: Number(r.lastInsertRowid) }; };
+  const raw = openRaw(file);
   return {
-    async all(sql, p) { return raw.prepare(sql).all(...norm(p)) as Record<string, unknown>[]; },
-    async run(sql, p) { return runSync(sql, p); },
-    async batch(stmts) { return raw.transaction(() => stmts.map((s) => runSync(s.sql, s.params)))(); },
+    async all(sql, p) { return raw.all(sql, p); },
+    async run(sql, p) { return raw.run(sql, p); },
+    async batch(stmts) { return raw.tx(() => stmts.map((s) => raw.run(s.sql, s.params))); },
     async exec(sql) { raw.exec(sql); },
   };
 }

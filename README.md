@@ -23,6 +23,10 @@ Notes: D1 has no interactive transactions, so multi-step writes use atomic batch
 
 Password **plus** a 6-digit code from any authenticator app (Google/Microsoft Authenticator, Authy, 1Password…). TOTP per RFC 6238 — no SMS, no cost. First sign-in forces enrolment (QR code), then shows 10 single-use backup codes (stored hashed). Replay-protected, ±30 s clock drift, 5 wrong codes locks the account 15 min and kills its sessions. Owner can reset a teammate's MFA on `/security`; if the *owner* loses phone and codes: `npm run mfa:reset -- owner@email` (needs server/D1 access). Set `MFA_REQUIRED=false` only for local development.
 
+## Node versions (Windows)
+
+Local development works on any Node **22.5 or newer, including 24**, with nothing to compile: the dashboard uses `better-sqlite3` when it installs, and otherwise falls back to Node's built-in SQLite (`node:sqlite`). `better-sqlite3` is an *optional* dependency, so if it can't be built (for example on Windows with a very new Node and no Visual Studio C++ tools) `npm install` still succeeds and you will only see a warning. Force a driver with `SQLITE_DRIVER=node` or `SQLITE_DRIVER=better-sqlite3`. When the app runs on Cloudflare D1, no local SQLite driver is used at all.
+
 ## Run it
 
 ```bash
